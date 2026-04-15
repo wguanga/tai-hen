@@ -1,0 +1,45 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# === Node / Frontend ===
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# === Electron build output ===
+release/
+out/
+
+# === Runtime data (用户数据，不入库) ===
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# === 日志 ===
+*.log
+logs/
+
+# === IDE / OS ===
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# === Claude Code 本地设置 ===
+.claude/settings.local.json
