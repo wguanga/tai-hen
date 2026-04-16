@@ -66,7 +66,7 @@ async def explain(req: Request, body: ExplainRequest, session: Session = Depends
 
     context = body.context
     if not context:
-        page_num = 1
+        page_num = body.page or 1
         try:
             abs_path = Path("data") / paper.file_path
             context = get_context_around(str(abs_path), page_num, body.text)

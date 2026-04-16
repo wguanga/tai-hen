@@ -104,6 +104,7 @@ class ExplainRequest(BaseModel):
     highlight_id: Optional[str] = None
     text: str
     context: Optional[str] = None
+    page: Optional[int] = None
     level: ExplainLevel = "simple"
 
 

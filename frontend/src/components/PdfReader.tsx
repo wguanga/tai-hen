@@ -9,7 +9,9 @@ import { COLOR_HEX, COLOR_LABELS } from '../types';
 import type { Highlight, HighlightColor } from '../types';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useHighlight, type CapturedSelection } from '../hooks/useHighlight';
+import { useKeyboard } from '../hooks/useKeyboard';
 import { streamSSE } from '../hooks/useStream';
+import { useToast } from './Toast';
 import { NoteInput } from './NoteInput';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -19,6 +21,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 
 export function PdfReader() {
   const { state, dispatch } = useAppStore();
+  const { toast } = useToast();
   const { activeColor, capture, clearSelection } = useHighlight();
   const [pageCount, setPageCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -26,11 +29,60 @@ export function PdfReader() {
   const [menu, setMenu] = useState<{ x: number; y: number; captured: CapturedSelection } | null>(null);
   const [hlMenu, setHlMenu] = useState<{ x: number; y: number; highlight: Highlight } | null>(null);
   const [noteInput, setNoteInput] = useState<{ captured: CapturedSelection } | null>(null);
+  const [hlFilter, setHlFilter] = useState<HighlightColor | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLElement>>(new Map());
 
   const paper = state.currentPaper;
   const pageWidth = Math.round(780 * zoom);
+
+  // Keyboard shortcuts
+  const kbActions = useMemo(() => ({
+    setColor: (c: HighlightColor) => {
+      dispatch({ type: 'SET_ACTIVE_COLOR', color: c });
+      toast(`高亮颜色：${COLOR_LABELS[c]}`, 'info');
+    },
+    explain: () => {
+      const c = capture();
+      if (c) setMenu({ x: window.innerWidth / 2, y: 120, captured: c });
+    },
+    translate: () => {
+      const c = capture();
+      if (c && paper) {
+        dispatch({ type: 'SET_ACTIVE_HIGHLIGHT', highlight: null });
+        dispatch({ type: 'CHAT_RESET' });
+        dispatch({ type: 'CHAT_START', userMessage: { role: 'user', content: `翻译：${c.text.slice(0, 80)}` } });
+        let full = '';
+        streamSSE('/ai/translate', { paper_id: paper.id, text: c.text }, {
+          onChunk: (t) => { full += t; dispatch({ type: 'CHAT_CHUNK', text: t }); },
+          onDone: () => dispatch({ type: 'CHAT_DONE', finalText: full }),
+          onError: (_x, m) => dispatch({ type: 'CHAT_ERROR', text: m }),
+        });
+        clearSelection();
+      }
+    },
+    addNote: () => {
+      const c = capture();
+      if (c) setNoteInput({ captured: c });
+    },
+    exportMd: async () => {
+      if (!paper) return;
+      try {
+        const md = await api.exportMarkdown(paper.id);
+        const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${paper.title}-notes.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast('导出成功', 'success');
+      } catch { toast('导出失败', 'error'); }
+    },
+  }), [paper, capture, clearSelection, dispatch, toast]);
+  useKeyboard(kbActions, !!paper);
 
   const fileUrl = useMemo(
     () => (paper ? api.paperFileUrl(paper.id) : null),
@@ -39,12 +91,22 @@ export function PdfReader() {
 
   const highlightsByPage = useMemo(() => {
     const map = new Map<number, Highlight[]>();
-    for (const h of state.highlights) {
+    const items = hlFilter ? state.highlights.filter((h) => h.color === hlFilter) : state.highlights;
+    for (const h of items) {
       const arr = map.get(h.page) ?? [];
       arr.push(h);
       map.set(h.page, arr);
     }
     return map;
+  }, [state.highlights, hlFilter]);
+
+  const hlCounts = useMemo(() => {
+    const c = { yellow: 0, blue: 0, green: 0, purple: 0, total: 0 };
+    for (const h of state.highlights) {
+      c[h.color as HighlightColor]++;
+      c.total++;
+    }
+    return c;
   }, [state.highlights]);
 
   // Track current page via scroll
@@ -195,7 +257,7 @@ export function PdfReader() {
       onClick: async () => {
         const hl = await saveHighlight(captured);
         if (hl) await aiStream('/ai/explain', {
-          paper_id: paper!.id, highlight_id: hl.id, text: captured.text, level: 'simple',
+          paper_id: paper!.id, highlight_id: hl.id, text: captured.text, page: captured.page, level: 'simple',
         }, `请解释：${captured.text.slice(0, 80)}`, hl);
       },
     },
@@ -215,7 +277,7 @@ export function PdfReader() {
         const hl = await saveHighlight(captured, c);
         if (c === 'purple' && hl) {
           await aiStream('/ai/explain', {
-            paper_id: paper!.id, highlight_id: hl.id, text: captured.text, level: 'simple',
+            paper_id: paper!.id, highlight_id: hl.id, text: captured.text, page: captured.page, level: 'simple',
           }, `请解释：${captured.text.slice(0, 80)}`, hl);
         }
       },
@@ -227,26 +289,33 @@ export function PdfReader() {
     },
   ];
 
-  const buildHlMenuItems = (hl: Highlight): MenuItem[] => [
-    ...(['yellow', 'blue', 'green', 'purple'] as HighlightColor[])
-      .filter((c) => c !== hl.color)
-      .map((c) => ({
-        label: `改色：${COLOR_LABELS[c]}`,
-        dot: COLOR_HEX[c],
-        onClick: () => handleChangeColor(hl, c),
-      })),
-    { label: '', onClick: () => {}, divider: true },
-    {
-      label: '🤖 AI 解释此高亮',
-      onClick: () => aiStream('/ai/explain', {
-        paper_id: paper!.id, highlight_id: hl.id, text: hl.text, level: 'simple',
-      }, `请解释：${hl.text.slice(0, 80)}`, hl),
-    },
-    {
-      label: '🗑️ 删除高亮',
-      onClick: () => handleDeleteHighlight(hl),
-    },
-  ];
+  const buildHlMenuItems = (hl: Highlight): MenuItem[] => {
+    const hasNotes = state.notes.some((n) => n.highlight_id === hl.id);
+    return [
+      ...(['yellow', 'blue', 'green', 'purple'] as HighlightColor[])
+        .filter((c) => c !== hl.color)
+        .map((c) => ({
+          label: `改色：${COLOR_LABELS[c]}`,
+          dot: COLOR_HEX[c],
+          onClick: () => handleChangeColor(hl, c),
+        })),
+      { label: '', onClick: () => {}, divider: true },
+      {
+        label: '🤖 AI 解释此高亮',
+        onClick: () => aiStream('/ai/explain', {
+          paper_id: paper!.id, highlight_id: hl.id, text: hl.text, page: hl.page, level: 'simple',
+        }, `请解释：${hl.text.slice(0, 80)}`, hl),
+      },
+      ...(hasNotes ? [{
+        label: '📝 查看关联笔记',
+        onClick: () => (window as any).__scrollToNote?.(hl.id),
+      }] : []),
+      {
+        label: '🗑️ 删除高亮',
+        onClick: () => handleDeleteHighlight(hl),
+      },
+    ];
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -280,6 +349,22 @@ export function PdfReader() {
         <button onClick={() => setZoom((z) => Math.min(3, z + 0.15))}
           className="px-1 hover:bg-gray-100 rounded">+</button>
         <button onClick={() => setZoom(1)} className="text-xs text-gray-500 hover:text-gray-700 ml-1">重置</button>
+
+        {hlCounts.total > 0 && (<>
+          <div className="h-4 w-px bg-gray-200 mx-1" />
+          <span className="text-xs text-gray-400">高亮：</span>
+          <button onClick={() => setHlFilter(null)}
+            className={'text-xs px-1 rounded ' + (!hlFilter ? 'bg-gray-200 font-medium' : 'hover:bg-gray-100 text-gray-500')}>
+            全部 {hlCounts.total}
+          </button>
+          {(['yellow', 'blue', 'green', 'purple'] as HighlightColor[]).map((c) => hlCounts[c] > 0 && (
+            <button key={c} onClick={() => setHlFilter(hlFilter === c ? null : c)}
+              className={'text-xs px-1 rounded flex items-center gap-0.5 ' + (hlFilter === c ? 'ring-1 ring-gray-400' : 'hover:bg-gray-100')}>
+              <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: COLOR_HEX[c] }} />
+              <span className="text-gray-500">{hlCounts[c]}</span>
+            </button>
+          ))}
+        </>)}
       </div>
 
       {/* PDF area */}

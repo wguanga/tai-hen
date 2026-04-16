@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAppStore } from '../store/app-store';
 import { useToast } from './Toast';
@@ -6,6 +6,7 @@ import { useToast } from './Toast';
 export function PaperList() {
   const { state, dispatch } = useAppStore();
   const { toast } = useToast();
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -45,14 +46,31 @@ export function PaperList() {
     }
   }
 
+  const filtered = search.trim()
+    ? state.papers.filter((p) =>
+        p.title.toLowerCase().includes(search.toLowerCase()) ||
+        p.authors.some((a) => a.toLowerCase().includes(search.toLowerCase()))
+      )
+    : state.papers;
+
   return (
     <div className="w-60 border-r bg-white flex-shrink-0 flex flex-col">
-      <div className="px-3 py-2 border-b text-sm font-medium">论文库 ({state.papers.length})</div>
+      <div className="px-3 py-2 border-b">
+        <div className="text-sm font-medium mb-1.5">论文库 ({state.papers.length})</div>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="搜索标题/作者…"
+          className="w-full text-xs px-2 py-1 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-300"
+        />
+      </div>
       <div className="flex-1 overflow-y-auto">
-        {state.papers.length === 0 && (
-          <div className="text-xs text-gray-400 p-3">上传 PDF 开始</div>
+        {filtered.length === 0 && (
+          <div className="text-xs text-gray-400 p-3">
+            {search ? '无匹配结果' : '上传 PDF 开始'}
+          </div>
         )}
-        {state.papers.map((p) => (
+        {filtered.map((p) => (
           <div
             key={p.id}
             onClick={() => openPaper(p.id)}

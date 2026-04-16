@@ -4,7 +4,15 @@ import { useAppStore } from '../store/app-store';
 import { useToast } from './Toast';
 import { COLOR_HEX, COLOR_LABELS, type HighlightColor } from '../types';
 
-export function Toolbar({ onOpenSettings }: { onOpenSettings: () => void }) {
+interface ToolbarProps {
+  onOpenSettings: () => void;
+  leftCollapsed: boolean;
+  onToggleLeft: () => void;
+  rightCollapsed: boolean;
+  onToggleRight: () => void;
+}
+
+export function Toolbar({ onOpenSettings, leftCollapsed, onToggleLeft, rightCollapsed, onToggleRight }: ToolbarProps) {
   const { state, dispatch } = useAppStore();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -37,7 +45,9 @@ export function Toolbar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const colors: HighlightColor[] = ['yellow', 'blue', 'green', 'purple'];
 
   return (
-    <div className="flex items-center gap-3 px-3 h-10 border-b bg-white flex-shrink-0">
+    <div className="flex items-center gap-2 px-3 h-10 border-b bg-white flex-shrink-0">
+      <button onClick={onToggleLeft} title={leftCollapsed ? '展开论文栏' : '收起论文栏'}
+        className="text-xs px-1 py-0.5 rounded hover:bg-gray-100 text-gray-500">{leftCollapsed ? '▶' : '◀'}</button>
       <div className="font-semibold text-sm">📖 Paper Reader</div>
 
       <input
@@ -87,6 +97,8 @@ export function Toolbar({ onOpenSettings }: { onOpenSettings: () => void }) {
       >
         ⚙️ 设置
       </button>
+      <button onClick={onToggleRight} title={rightCollapsed ? '展开 AI 栏' : '收起 AI 栏'}
+        className="text-xs px-1 py-0.5 rounded hover:bg-gray-100 text-gray-500">{rightCollapsed ? '◀' : '▶'}</button>
     </div>
   );
 }
