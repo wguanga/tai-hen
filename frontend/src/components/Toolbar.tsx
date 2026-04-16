@@ -1,17 +1,21 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { api } from '../api';
 import { useAppStore } from '../store/app-store';
+import { useToast } from './Toast';
 import { COLOR_HEX, COLOR_LABELS, type HighlightColor } from '../types';
 
 export function Toolbar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { state, dispatch } = useAppStore();
+  const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   const paper = state.currentPaper;
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setUploading(true);
     try {
       const p = await api.uploadPaper(file);
       dispatch({ type: 'ADD_PAPER', paper: p });
@@ -20,10 +24,12 @@ export function Toolbar({ onOpenSettings }: { onOpenSettings: () => void }) {
         api.listNotes(p.id),
       ]);
       dispatch({ type: 'OPEN_PAPER', paper: p, highlights: hl.items, notes: notes.items });
+      toast(`已上传：${p.title}`, 'success');
     } catch (err) {
       console.error(err);
-      alert('上传失败：' + (err as Error).message);
+      toast('上传失败：' + (err as Error).message, 'error');
     } finally {
+      setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
     }
   }
@@ -43,9 +49,10 @@ export function Toolbar({ onOpenSettings }: { onOpenSettings: () => void }) {
       />
       <button
         onClick={() => fileRef.current?.click()}
-        className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100"
+        disabled={uploading}
+        className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-50"
       >
-        📤 上传 PDF
+        {uploading ? '上传中…' : '📤 上传 PDF'}
       </button>
 
       <div className="h-5 w-px bg-gray-200" />

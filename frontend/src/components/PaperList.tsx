@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
 import { api } from '../api';
 import { useAppStore } from '../store/app-store';
+import { useToast } from './Toast';
 
 export function PaperList() {
   const { state, dispatch } = useAppStore();
+  const { toast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -36,8 +38,10 @@ export function PaperList() {
     try {
       await api.deletePaper(id);
       dispatch({ type: 'REMOVE_PAPER', id });
+      toast('论文已删除', 'info');
     } catch (e) {
       console.error(e);
+      toast('删除失败', 'error');
     }
   }
 

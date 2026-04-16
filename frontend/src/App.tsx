@@ -5,13 +5,16 @@ import { PaperList } from './components/PaperList';
 import { PdfReader } from './components/PdfReader';
 import { SettingsModal } from './components/SettingsModal';
 import { Toolbar } from './components/Toolbar';
+import { ToastProvider } from './components/Toast';
 import { AppStoreProvider } from './store/app-store';
 
 export default function App() {
   return (
-    <AppStoreProvider>
-      <Layout />
-    </AppStoreProvider>
+    <ToastProvider>
+      <AppStoreProvider>
+        <Layout />
+      </AppStoreProvider>
+    </ToastProvider>
   );
 }
 

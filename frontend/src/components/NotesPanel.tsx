@@ -1,6 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import { api } from '../api';
 import { useAppStore } from '../store/app-store';
+import { useToast } from './Toast';
 import { COLOR_HEX } from '../types';
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -11,6 +12,7 @@ const SOURCE_LABEL: Record<string, string> = {
 
 export function NotesPanel() {
   const { state, dispatch } = useAppStore();
+  const { toast } = useToast();
   const paper = state.currentPaper;
 
   const highlightColor = (highlightId?: string | null) => {
@@ -25,8 +27,10 @@ export function NotesPanel() {
     try {
       await api.deleteNote(paper.id, id);
       dispatch({ type: 'REMOVE_NOTE', id });
+      toast('笔记已删除', 'info');
     } catch (e) {
       console.error(e);
+      toast('删除失败', 'error');
     }
   }
 
@@ -43,8 +47,10 @@ export function NotesPanel() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      toast('导出成功', 'success');
     } catch (e) {
       console.error(e);
+      toast('导出失败', 'error');
     }
   }
 

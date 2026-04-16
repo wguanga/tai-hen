@@ -1,30 +1,36 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 
 import { api } from '../api';
 import { useAppStore } from '../store/app-store';
-import { COLOR_HEX } from '../types';
-import type { Highlight } from '../types';
+import { COLOR_HEX, COLOR_LABELS } from '../types';
+import type { Highlight, HighlightColor } from '../types';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useHighlight, type CapturedSelection } from '../hooks/useHighlight';
 import { streamSSE } from '../hooks/useStream';
+import { NoteInput } from './NoteInput';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.js',
   import.meta.url,
 ).toString();
 
-const PAGE_WIDTH = 780;
-
 export function PdfReader() {
   const { state, dispatch } = useAppStore();
   const { activeColor, capture, clearSelection } = useHighlight();
   const [pageCount, setPageCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [zoom, setZoom] = useState(1.0);
   const [menu, setMenu] = useState<{ x: number; y: number; captured: CapturedSelection } | null>(null);
+  const [hlMenu, setHlMenu] = useState<{ x: number; y: number; highlight: Highlight } | null>(null);
+  const [noteInput, setNoteInput] = useState<{ captured: CapturedSelection } | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<Map<number, HTMLElement>>(new Map());
 
   const paper = state.currentPaper;
+  const pageWidth = Math.round(780 * zoom);
 
   const fileUrl = useMemo(
     () => (paper ? api.paperFileUrl(paper.id) : null),
@@ -41,20 +47,59 @@ export function PdfReader() {
     return map;
   }, [state.highlights]);
 
+  // Track current page via scroll
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || pageCount === 0) return;
+    const onScroll = () => {
+      const scrollMid = el.scrollTop + el.clientHeight / 3;
+      let best = 1;
+      pageRefs.current.forEach((div, num) => {
+        if (div.offsetTop <= scrollMid) best = num;
+      });
+      setCurrentPage(best);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [pageCount]);
+
+  // Right-click on PDF text
   useEffect(() => {
     if (!paper) return;
     const onContextMenu = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
-      if (!target) return;
-      if (!target.closest('.pdf-page')) return;
+      if (!target?.closest('.pdf-page')) return;
       const captured = capture();
       if (!captured) return;
       e.preventDefault();
+      setHlMenu(null);
       setMenu({ x: e.clientX, y: e.clientY, captured });
     };
     window.addEventListener('contextmenu', onContextMenu);
     return () => window.removeEventListener('contextmenu', onContextMenu);
   }, [paper?.id, capture]);
+
+  // Click on existing highlight
+  useEffect(() => {
+    if (!paper) return;
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const hlId = target.dataset?.hl;
+      if (!hlId) return;
+      const hl = state.highlights.find((h) => h.id === hlId);
+      if (!hl) return;
+      e.stopPropagation();
+      setMenu(null);
+      setHlMenu({ x: e.clientX, y: e.clientY, highlight: hl });
+    };
+    window.addEventListener('click', onClick);
+    return () => window.removeEventListener('click', onClick);
+  }, [paper?.id, state.highlights]);
+
+  const goToPage = useCallback((page: number) => {
+    const el = pageRefs.current.get(page);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
 
   if (!paper) {
     return (
@@ -87,116 +132,211 @@ export function PdfReader() {
     }
   }
 
-  async function explainHighlight(captured: CapturedSelection, hl: Highlight) {
+  async function aiStream(
+    path: string,
+    body: object,
+    userLabel: string,
+    highlight?: Highlight | null,
+  ) {
     if (!paper) return;
-    dispatch({ type: 'SET_ACTIVE_HIGHLIGHT', highlight: hl });
+    dispatch({ type: 'SET_ACTIVE_HIGHLIGHT', highlight: highlight ?? null });
     dispatch({ type: 'CHAT_RESET' });
-    dispatch({
-      type: 'CHAT_START',
-      userMessage: { role: 'user', content: `请解释：${captured.text.slice(0, 120)}` },
-    });
+    dispatch({ type: 'CHAT_START', userMessage: { role: 'user', content: userLabel } });
     const controller = new AbortController();
     let full = '';
-    await streamSSE(
-      '/ai/explain',
-      {
-        paper_id: paper.id,
-        highlight_id: hl.id,
-        text: captured.text,
-        level: 'simple',
-      },
-      {
-        signal: controller.signal,
-        onChunk: (text) => {
-          full += text;
-          dispatch({ type: 'CHAT_CHUNK', text });
-        },
-        onDone: () => dispatch({ type: 'CHAT_DONE', finalText: full }),
-        onError: (_code, msg) => dispatch({ type: 'CHAT_ERROR', text: msg }),
-      },
-    );
+    await streamSSE(path, body, {
+      signal: controller.signal,
+      onChunk: (text) => { full += text; dispatch({ type: 'CHAT_CHUNK', text }); },
+      onDone: () => dispatch({ type: 'CHAT_DONE', finalText: full }),
+      onError: (_c, msg) => dispatch({ type: 'CHAT_ERROR', text: msg }),
+    });
   }
 
-  const buildMenuItems = (captured: CapturedSelection): MenuItem[] => {
-    const items: MenuItem[] = [
-      {
-        label: '🤖 AI 解释选中内容',
-        onClick: async () => {
-          const hl = await saveHighlight(captured);
-          if (hl) await explainHighlight(captured, hl);
-        },
+  async function handleDeleteHighlight(hl: Highlight) {
+    if (!paper) return;
+    try {
+      await api.deleteHighlight(paper.id, hl.id);
+      dispatch({ type: 'REMOVE_HIGHLIGHT', id: hl.id });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function handleChangeColor(hl: Highlight, color: HighlightColor) {
+    if (!paper) return;
+    try {
+      const updated = await api.updateHighlight(paper.id, hl.id, { color });
+      dispatch({ type: 'UPDATE_HIGHLIGHT', id: hl.id, patch: updated });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function handleManualNote(captured: CapturedSelection, noteText: string) {
+    if (!paper) return;
+    const hl = await saveHighlight(captured);
+    if (!hl) return;
+    try {
+      const note = await api.createNote(paper.id, {
+        highlight_id: hl.id,
+        title: captured.text.slice(0, 40),
+        content: noteText,
+        source: 'manual',
+      });
+      dispatch({ type: 'ADD_NOTE', note });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  const buildMenuItems = (captured: CapturedSelection): MenuItem[] => [
+    {
+      label: '🤖 AI 解释',
+      onClick: async () => {
+        const hl = await saveHighlight(captured);
+        if (hl) await aiStream('/ai/explain', {
+          paper_id: paper!.id, highlight_id: hl.id, text: captured.text, level: 'simple',
+        }, `请解释：${captured.text.slice(0, 80)}`, hl);
       },
-      { label: '', onClick: () => {}, divider: true },
-      {
-        label: '高亮：重要概念',
-        dot: COLOR_HEX.yellow,
-        onClick: () => saveHighlight(captured, 'yellow'),
+    },
+    {
+      label: '🌐 翻译选中内容',
+      onClick: async () => {
+        await aiStream('/ai/translate', {
+          paper_id: paper!.id, text: captured.text,
+        }, `翻译：${captured.text.slice(0, 80)}`);
       },
-      {
-        label: '高亮：方法细节',
-        dot: COLOR_HEX.blue,
-        onClick: () => saveHighlight(captured, 'blue'),
+    },
+    { label: '', onClick: () => {}, divider: true },
+    ...(['yellow', 'blue', 'green', 'purple'] as HighlightColor[]).map((c) => ({
+      label: `高亮：${COLOR_LABELS[c]}` + (c === 'purple' ? ' (+ AI)' : ''),
+      dot: COLOR_HEX[c],
+      onClick: async () => {
+        const hl = await saveHighlight(captured, c);
+        if (c === 'purple' && hl) {
+          await aiStream('/ai/explain', {
+            paper_id: paper!.id, highlight_id: hl.id, text: captured.text, level: 'simple',
+          }, `请解释：${captured.text.slice(0, 80)}`, hl);
+        }
       },
-      {
-        label: '高亮：实验结论',
-        dot: COLOR_HEX.green,
-        onClick: () => saveHighlight(captured, 'green'),
-      },
-      {
-        label: '高亮：不理解 (+ AI 解释)',
-        dot: COLOR_HEX.purple,
-        onClick: async () => {
-          const hl = await saveHighlight(captured, 'purple');
-          if (hl) await explainHighlight(captured, hl);
-        },
-      },
-    ];
-    return items;
-  };
+    })),
+    { label: '', onClick: () => {}, divider: true },
+    {
+      label: '📝 添加手动笔记',
+      onClick: () => setNoteInput({ captured }),
+    },
+  ];
+
+  const buildHlMenuItems = (hl: Highlight): MenuItem[] => [
+    ...(['yellow', 'blue', 'green', 'purple'] as HighlightColor[])
+      .filter((c) => c !== hl.color)
+      .map((c) => ({
+        label: `改色：${COLOR_LABELS[c]}`,
+        dot: COLOR_HEX[c],
+        onClick: () => handleChangeColor(hl, c),
+      })),
+    { label: '', onClick: () => {}, divider: true },
+    {
+      label: '🤖 AI 解释此高亮',
+      onClick: () => aiStream('/ai/explain', {
+        paper_id: paper!.id, highlight_id: hl.id, text: hl.text, level: 'simple',
+      }, `请解释：${hl.text.slice(0, 80)}`, hl),
+    },
+    {
+      label: '🗑️ 删除高亮',
+      onClick: () => handleDeleteHighlight(hl),
+    },
+  ];
 
   return (
-    <div className="w-full h-full overflow-y-auto bg-gray-100 py-4">
-      <Document
-        file={fileUrl}
-        onLoadSuccess={(pdf) => setPageCount(pdf.numPages)}
-        loading={<div className="text-center text-gray-500 pt-10">加载 PDF…</div>}
-        error={<div className="text-center text-red-500 pt-10">PDF 加载失败</div>}
-      >
-        {Array.from({ length: pageCount }, (_, i) => i + 1).map((pageNum) => (
-          <div
-            key={pageNum}
-            className="pdf-page"
-            data-page-number={pageNum}
-            style={{ width: PAGE_WIDTH }}
-          >
-            <Page pageNumber={pageNum} width={PAGE_WIDTH} />
-            {(highlightsByPage.get(pageNum) ?? []).map((h) =>
-              h.position.rects.map((r, i) => (
-                <div
-                  key={`${h.id}-${i}`}
-                  className="highlight-rect"
-                  data-hl={h.id}
-                  style={{
-                    left: r.x,
-                    top: r.y,
-                    width: r.width,
-                    height: r.height,
-                    background: COLOR_HEX[h.color],
-                    opacity: 0.4,
-                  }}
-                />
-              )),
-            )}
-          </div>
-        ))}
-      </Document>
+    <div className="flex flex-col h-full">
+      {/* Page nav bar */}
+      <div className="flex items-center gap-2 px-3 py-1 border-b bg-white text-sm flex-shrink-0">
+        <button onClick={() => goToPage(Math.max(1, currentPage - 1))} disabled={currentPage <= 1}
+          className="px-1 hover:bg-gray-100 rounded disabled:opacity-30">◀</button>
+        <span className="text-gray-600">
+          <input
+            type="number"
+            min={1}
+            max={pageCount}
+            value={currentPage}
+            onChange={(e) => {
+              const p = Math.max(1, Math.min(pageCount, Number(e.target.value) || 1));
+              setCurrentPage(p);
+              goToPage(p);
+            }}
+            className="w-12 text-center border border-gray-300 rounded px-1"
+          />
+          <span className="mx-1">/ {pageCount}</span>
+        </span>
+        <button onClick={() => goToPage(Math.min(pageCount, currentPage + 1))} disabled={currentPage >= pageCount}
+          className="px-1 hover:bg-gray-100 rounded disabled:opacity-30">▶</button>
 
+        <div className="h-4 w-px bg-gray-200 mx-1" />
+
+        <button onClick={() => setZoom((z) => Math.max(0.5, z - 0.15))}
+          className="px-1 hover:bg-gray-100 rounded">−</button>
+        <span className="text-gray-500 w-12 text-center">{Math.round(zoom * 100)}%</span>
+        <button onClick={() => setZoom((z) => Math.min(3, z + 0.15))}
+          className="px-1 hover:bg-gray-100 rounded">+</button>
+        <button onClick={() => setZoom(1)} className="text-xs text-gray-500 hover:text-gray-700 ml-1">重置</button>
+      </div>
+
+      {/* PDF area */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-gray-100 py-4">
+        <Document
+          file={fileUrl}
+          onLoadSuccess={(pdf) => setPageCount(pdf.numPages)}
+          loading={<div className="text-center text-gray-500 pt-10">加载 PDF…</div>}
+          error={<div className="text-center text-red-500 pt-10">PDF 加载失败</div>}
+        >
+          {Array.from({ length: pageCount }, (_, i) => i + 1).map((pageNum) => (
+            <div
+              key={pageNum}
+              className="pdf-page"
+              data-page-number={pageNum}
+              style={{ width: pageWidth }}
+              ref={(el) => { if (el) pageRefs.current.set(pageNum, el); }}
+            >
+              <Page pageNumber={pageNum} width={pageWidth} />
+              {(highlightsByPage.get(pageNum) ?? []).map((h) =>
+                h.position.rects.map((r, idx) => (
+                  <div
+                    key={`${h.id}-${idx}`}
+                    className="highlight-rect"
+                    data-hl={h.id}
+                    style={{
+                      left: r.x * zoom,
+                      top: r.y * zoom,
+                      width: r.width * zoom,
+                      height: r.height * zoom,
+                      background: COLOR_HEX[h.color],
+                      opacity: 0.4,
+                      cursor: 'pointer',
+                      pointerEvents: 'auto',
+                    }}
+                  />
+                )),
+              )}
+            </div>
+          ))}
+        </Document>
+      </div>
+
+      {/* Context menus */}
       {menu && (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          items={buildMenuItems(menu.captured)}
-          onClose={() => setMenu(null)}
+        <ContextMenu x={menu.x} y={menu.y} items={buildMenuItems(menu.captured)} onClose={() => setMenu(null)} />
+      )}
+      {hlMenu && (
+        <ContextMenu x={hlMenu.x} y={hlMenu.y} items={buildHlMenuItems(hlMenu.highlight)} onClose={() => setHlMenu(null)} />
+      )}
+
+      {/* Manual note modal */}
+      {noteInput && (
+        <NoteInput
+          onSubmit={(text) => { handleManualNote(noteInput.captured, text); setNoteInput(null); }}
+          onCancel={() => setNoteInput(null)}
+          selectedText={noteInput.captured.text}
         />
       )}
     </div>
