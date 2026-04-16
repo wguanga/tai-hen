@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.pdf-page {
+  position: relative;
+  margin: 0 auto 16px;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+
+.highlight-rect {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+}
+
+.markdown-body {
+  line-height: 1.6;
+  font-size: 14px;
+}
+.markdown-body p { margin: .5em 0; }
+.markdown-body ul, .markdown-body ol { padding-left: 1.4em; margin: .4em 0; }
+.markdown-body code {
+  background: #f3f4f6;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 90%;
+}
+.markdown-body pre {
+  background: #f3f4f6;
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+.markdown-body blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 10px;
+  color: #4b5563;
+  margin: .6em 0;
+}
+
+/* 右键菜单 */
+.ctx-menu {
+  min-width: 180px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.12);
+  padding: 4px 0;
+  font-size: 13px;
+  user-select: none;
+}
+.ctx-menu li {
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.ctx-menu li:hover { background: #f3f4f6; }
+.ctx-menu li.divider {
+  height: 1px;
+  margin: 4px 0;
+  background: #e5e7eb;
+  cursor: default;
+  padding: 0;
+}
+.ctx-menu li.divider:hover { background: #e5e7eb; }
