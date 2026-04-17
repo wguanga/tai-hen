@@ -98,6 +98,53 @@ def get_outline(pdf_path: str) -> list[dict]:
         doc.close()
 
 
+PAGE_WIDTH_CSS = 780  # Must match frontend PAGE_WIDTH constant (zoom=1)
+
+
+def find_text_position(pdf_path: str, page: int, text: str) -> dict | None:
+    """Find a text snippet on a page and return its bbox in CSS px (zoom=1).
+
+    Matches the frontend coordinate system used for highlights.
+    Returns {x, y, width, height, rects:[...]} or None if not found.
+    """
+    doc = fitz.open(pdf_path)
+    try:
+        if page < 1 or page > len(doc):
+            return None
+        p = doc[page - 1]
+        hits = p.search_for(text, quads=False)
+        if not hits:
+            # Try shorter fragment for fuzzy match
+            fragment = text.strip().split(".")[0][:80]
+            if len(fragment) < 10:
+                return None
+            hits = p.search_for(fragment, quads=False)
+            if not hits:
+                return None
+        # PyMuPDF returns rects in PDF points. Page width in points = p.rect.width.
+        scale = PAGE_WIDTH_CSS / p.rect.width
+        rects = [
+            {
+                "x": float(r.x0) * scale,
+                "y": float(r.y0) * scale,
+                "width": float(r.x1 - r.x0) * scale,
+                "height": float(r.y1 - r.y0) * scale,
+            }
+            for r in hits
+        ]
+        xs = [r["x"] for r in rects]
+        ys = [r["y"] for r in rects]
+        return {
+            "x": min(xs),
+            "y": min(ys),
+            "width": max(r["x"] + r["width"] for r in rects) - min(xs),
+            "height": max(r["y"] + r["height"] for r in rects) - min(ys),
+            "rects": rects,
+        }
+    finally:
+        doc.close()
+
+
 def get_section_text(pdf_path: str, start_page: int, end_page: int | None = None, max_chars: int = 30_000) -> str:
     """Return concatenated text between start_page (inclusive) and end_page (exclusive).
 
@@ -167,5 +214,79 @@ def get_all_text(pdf_path: str, max_chars: int = 100_000) -> str:
             parts.append(t)
             used += len(t)
         return "\n".join(parts)
+    finally:
+        doc.close()
+
+
+def extract_references(pdf_path: str, max_entries: int = 200) -> list[dict]:
+    """Extract numbered reference entries from the References / Bibliography section.
+
+    Strategy: find a header line like 'References' or 'Bibliography', then collect
+    entries matching '[n] ...' or 'n. ...' patterns until end of document.
+    Returns [{index: 1, text: "..."}, ...] sorted by index.
+    """
+    import re
+
+    doc = fitz.open(pdf_path)
+    try:
+        all_text = ""
+        for page in doc:
+            all_text += "\n" + page.get_text()
+    finally:
+        doc.close()
+
+    # Find the references section (case-insensitive, line-start)
+    header_re = re.compile(r"(?im)^\s*(references|bibliography|参考文献)\s*$")
+    m = header_re.search(all_text)
+    if not m:
+        return []
+    ref_block = all_text[m.end():]
+
+    # Try '[n] ...' pattern first (most common in CS papers)
+    bracket_re = re.compile(r"\[(\d{1,3})\]\s+(.+?)(?=\n\s*\[\d{1,3}\]|\Z)", re.DOTALL)
+    matches = list(bracket_re.finditer(ref_block))
+    if not matches:
+        # Fallback: 'n. ...' pattern
+        num_re = re.compile(r"(?m)^\s*(\d{1,3})[\.\)]\s+(.+?)(?=\n\s*\d{1,3}[\.\)]|\Z)", re.DOTALL)
+        matches = list(num_re.finditer(ref_block))
+
+    results: list[dict] = []
+    seen: set[int] = set()
+    for m in matches[:max_entries]:
+        try:
+            idx = int(m.group(1))
+        except ValueError:
+            continue
+        if idx in seen:
+            continue
+        seen.add(idx)
+        text = m.group(2).strip().replace("\n", " ")
+        # Collapse whitespace
+        text = re.sub(r"\s+", " ", text)
+        if len(text) < 10:
+            continue
+        results.append({"index": idx, "text": text[:500]})
+    results.sort(key=lambda r: r["index"])
+    return results
+
+
+def get_all_text_with_pages(pdf_path: str, max_chars: int = 100_000) -> str:
+    """Concatenate all pages with explicit page markers so LLM can cite pages."""
+    doc = fitz.open(pdf_path)
+    try:
+        parts: list[str] = []
+        used = 0
+        for i, page in enumerate(doc):
+            marker = f"\n\n[page {i + 1}]\n"
+            t = page.get_text()
+            if used + len(marker) + len(t) > max_chars:
+                parts.append(marker)
+                parts.append(t[: max(0, max_chars - used - len(marker))])
+                parts.append("\n[truncated]")
+                break
+            parts.append(marker)
+            parts.append(t)
+            used += len(marker) + len(t)
+        return "".join(parts).strip()
     finally:
         doc.close()

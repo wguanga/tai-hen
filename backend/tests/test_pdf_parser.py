@@ -1,7 +1,10 @@
 """Tests for services/pdf_parser.py."""
 from services.pdf_parser import (
     extract_metadata,
+    extract_references,
+    find_text_position,
     get_all_text,
+    get_all_text_with_pages,
     get_context_around,
     get_outline,
     get_page_text,
@@ -89,6 +92,23 @@ class TestGetAllText:
         assert "[truncated]" in text
 
 
+class TestGetAllTextWithPages:
+    def test_includes_page_markers(self, sample_pdf_path):
+        text = get_all_text_with_pages(sample_pdf_path)
+        assert "[page 1]" in text
+        assert "[page 2]" in text
+        assert "[page 3]" in text
+
+    def test_order_preserved(self, sample_pdf_path):
+        text = get_all_text_with_pages(sample_pdf_path)
+        i1 = text.index("[page 1]")
+        i2 = text.index("[page 2]")
+        i3 = text.index("[page 3]")
+        assert i1 < i2 < i3
+        # Content before Method marker should include Introduction
+        assert text.index("Introduction") < text.index("Method")
+
+
 class TestGetOutline:
     def test_extracts_toc(self, sample_pdf_path):
         items = get_outline(sample_pdf_path)
@@ -138,6 +158,60 @@ class TestSectionText:
     def test_truncates_at_max_chars(self, sample_pdf_path):
         text = get_section_text(sample_pdf_path, 1, None, max_chars=15)
         assert "[truncated]" in text
+
+
+class TestExtractReferences:
+    def _make_pdf_with_refs(self, tmp_path, header: str = "References"):
+        import fitz
+        doc = fitz.open()
+        p1 = doc.new_page()
+        p1.insert_text((72, 72), "Body text cites [1] and [2].")
+        p2 = doc.new_page()
+        p2.insert_text(
+            (72, 72),
+            f"{header}\n"
+            "[1] Smith J. Attention Is All You Need. NeurIPS 2017.\n"
+            "[2] Doe A, Roe B. BERT: Bidirectional Encoders. NAACL 2019.\n"
+            "[3] Someone E. GPT-3. 2020.",
+            fontsize=10,
+        )
+        path = tmp_path / "with-refs.pdf"
+        path.write_bytes(doc.tobytes())
+        doc.close()
+        return str(path)
+
+    def test_extracts_bracketed_references(self, tmp_path):
+        path = self._make_pdf_with_refs(tmp_path)
+        refs = extract_references(path)
+        assert len(refs) == 3
+        assert refs[0]["index"] == 1
+        assert "Smith J" in refs[0]["text"]
+        assert refs[1]["index"] == 2
+        assert "BERT" in refs[1]["text"]
+
+    def test_no_references_section_returns_empty(self, sample_pdf_path):
+        assert extract_references(sample_pdf_path) == []
+
+    def test_handles_bibliography_header(self, tmp_path):
+        path = self._make_pdf_with_refs(tmp_path, header="Bibliography")
+        refs = extract_references(path)
+        assert len(refs) >= 1
+
+
+class TestFindTextPosition:
+    def test_finds_known_text(self, sample_pdf_path):
+        pos = find_text_position(sample_pdf_path, 2, "attention mechanism")
+        assert pos is not None
+        assert pos["width"] > 0
+        assert pos["height"] > 0
+        assert len(pos["rects"]) >= 1
+
+    def test_returns_none_for_missing_text(self, sample_pdf_path):
+        pos = find_text_position(sample_pdf_path, 1, "absolutely not in this paper xyz qwe")
+        assert pos is None
+
+    def test_out_of_range_page_returns_none(self, sample_pdf_path):
+        assert find_text_position(sample_pdf_path, 99, "anything") is None
 
 
 class TestSearchText:

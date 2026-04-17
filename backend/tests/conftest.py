@@ -133,3 +133,26 @@ def mock_llm(monkeypatch):
     import routers.ai as ai_router
     monkeypatch.setattr(ai_router, "stream_llm", fake_stream)
     return chunks
+
+
+@pytest.fixture
+def mock_llm_response(monkeypatch):
+    """Factory fixture: returns a setter to install a fake response for stream_llm.
+
+    Usage:
+        def test_xxx(mock_llm_response, ...):
+            mock_llm_response('{"key": "value"}')
+            ...
+    """
+    def _set(text: str):
+        async def fake_stream(messages, system):
+            # Simulate streaming by chunking into ~32 char pieces
+            for i in range(0, len(text), 32):
+                yield text[i:i + 32]
+
+        import services.llm_service as llm
+        monkeypatch.setattr(llm, "stream_llm", fake_stream)
+        import routers.ai as ai_router
+        monkeypatch.setattr(ai_router, "stream_llm", fake_stream)
+
+    return _set

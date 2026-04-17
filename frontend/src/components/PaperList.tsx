@@ -32,6 +32,10 @@ export function PaperList() {
         api.listNotes(id),
       ]);
       dispatch({ type: 'OPEN_PAPER', paper, highlights: hl.items, notes: notes.items });
+      // Fire-and-forget references fetch
+      api.getReferences(id)
+        .then((r) => dispatch({ type: 'SET_REFERENCES', references: r.items }))
+        .catch(() => {});
     } catch (e) {
       console.error(e);
     }

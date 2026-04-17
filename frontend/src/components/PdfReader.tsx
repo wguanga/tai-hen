@@ -17,6 +17,8 @@ import { NoteInput } from './NoteInput';
 import { TocPanel } from './TocPanel';
 import { SearchBar } from './SearchBar';
 import { HighlightMinimap } from './HighlightMinimap';
+import { SuggestHighlightsModal } from './SuggestHighlightsModal';
+import { BilingualPopover } from './BilingualPopover';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.js',
@@ -36,6 +38,8 @@ export function PdfReader() {
   const [hlFilter, setHlFilter] = useState<HighlightColor | null>(null);
   const [showToc, setShowToc] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [bilingual, setBilingual] = useState<{ text: string; x: number; y: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLElement>>(new Map());
 
@@ -302,7 +306,20 @@ export function PdfReader() {
       },
     },
     {
-      label: '🌐 翻译选中内容',
+      label: '🌐 双语对照（悬浮）',
+      onClick: () => {
+        // Anchor popover near the selection's last rect
+        const lastRect = captured.position.rects[captured.position.rects.length - 1];
+        const pageEl = pageRefs.current.get(captured.page);
+        const pageRect = pageEl?.getBoundingClientRect();
+        const anchor = pageRect
+          ? { x: pageRect.left + lastRect.x * zoom, y: pageRect.top + (lastRect.y + lastRect.height) * zoom }
+          : { x: window.innerWidth / 2 - 200, y: 120 };
+        setBilingual({ text: captured.text, x: anchor.x, y: anchor.y });
+      },
+    },
+    {
+      label: '🌐 翻译（在 AI 面板）',
       onClick: async () => {
         await aiStream('/ai/translate', {
           paper_id: paper!.id, text: captured.text,
@@ -376,6 +393,8 @@ export function PdfReader() {
           className={'px-1 rounded text-xs ' + (showToc ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-gray-100 text-gray-500')}>☰</button>
         <button onClick={() => setShowSearch((v) => !v)} title="搜索 (Ctrl+F)"
           className={'px-1 rounded text-xs ' + (showSearch ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-gray-100 text-gray-500')}>🔍</button>
+        <button onClick={() => setShowSuggest(true)} title="AI 建议重点"
+          className="px-1 rounded text-xs hover:bg-gray-100 text-gray-500">✨</button>
         <div className="h-4 w-px bg-gray-200" />
         <button onClick={() => goToPage(Math.max(1, currentPage - 1))} disabled={currentPage <= 1}
           className="px-1 hover:bg-gray-100 rounded disabled:opacity-30">◀</button>
@@ -519,6 +538,25 @@ export function PdfReader() {
       )}
       {hlMenu && (
         <ContextMenu x={hlMenu.x} y={hlMenu.y} items={buildHlMenuItems(hlMenu.highlight)} onClose={() => setHlMenu(null)} />
+      )}
+
+      {/* Bilingual popover */}
+      {bilingual && paper && (
+        <BilingualPopover
+          paperId={paper.id}
+          sourceText={bilingual.text}
+          anchor={{ x: bilingual.x, y: bilingual.y }}
+          onClose={() => setBilingual(null)}
+        />
+      )}
+
+      {/* AI suggest highlights modal */}
+      {showSuggest && paper && (
+        <SuggestHighlightsModal
+          paperId={paper.id}
+          onClose={() => setShowSuggest(false)}
+          onGoToPage={(p) => { goToPage(p); }}
+        />
       )}
 
       {/* Manual note modal */}

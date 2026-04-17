@@ -13,7 +13,13 @@ from repositories.chat_repo import ChatRepo
 from repositories.paper_repo import PaperRepo
 from schemas import ChatRequest, ExplainRequest, ExplainSectionRequest, SummarizeRequest, TranslateRequest
 from services.llm_service import SYSTEM_PROMPTS, stream_llm
-from services.pdf_parser import get_all_text, get_context_around, get_section_text
+from services.pdf_parser import (
+    find_text_position,
+    get_all_text,
+    get_all_text_with_pages,
+    get_context_around,
+    get_section_text,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ai"])
@@ -122,6 +128,83 @@ async def summarize(req: Request, body: SummarizeRequest, session: Session = Dep
     full_text = get_all_text(str(abs_path), max_chars=60_000)
     messages = [{"role": "user", "content": f"# 论文全文（可能截断）\n\n{full_text}"}]
     return _sse_response(_sse_stream(req, stream_llm(messages, SYSTEM_PROMPTS["summarize"])))
+
+
+def _parse_suggestions_json(raw: str) -> list[dict]:
+    """Extract suggestions list from possibly-messy LLM output."""
+    import re
+    # Strip code fences
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+    # Try direct parse
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list):
+            return data
+    except json.JSONDecodeError:
+        pass
+    # Fallback: find first [...] block
+    m = re.search(r"\[\s*\{.*?\}\s*\]", raw, re.DOTALL)
+    if m:
+        try:
+            data = json.loads(m.group(0))
+            if isinstance(data, list):
+                return data
+        except json.JSONDecodeError:
+            pass
+    return []
+
+
+@router.post("/suggest_highlights")
+async def suggest_highlights(req: Request, body: SummarizeRequest, session: Session = Depends(get_session)):
+    """Ask LLM to nominate 5-10 key sentences to highlight. Returns list.
+
+    Non-streaming: buffers full LLM output then parses JSON.
+    """
+    paper = PaperRepo(session).by_id(body.paper_id)
+    if not paper:
+        raise PaperNotFound(detail={"paper_id": body.paper_id})
+
+    abs_path = Path("data") / paper.file_path
+    paged_text = get_all_text_with_pages(str(abs_path), max_chars=50_000)
+    messages = [{"role": "user", "content": f"# 论文文本（带页码标记）\n\n{paged_text}"}]
+
+    buf: list[str] = []
+    try:
+        async for chunk in stream_llm(messages, SYSTEM_PROMPTS["suggest_highlights"]):
+            buf.append(chunk)
+    except Exception as e:
+        logger.exception("suggest_highlights llm failed")
+        return {"items": [], "error": str(e)[:200]}
+
+    suggestions_raw = _parse_suggestions_json("".join(buf))
+
+    # Validate + enrich with findable positions
+    valid: list[dict] = []
+    for s in suggestions_raw:
+        if not isinstance(s, dict):
+            continue
+        text = str(s.get("text", "")).strip()
+        page = s.get("page")
+        color = str(s.get("color", "yellow")).lower()
+        reason = str(s.get("reason", "")).strip()
+        if not text or not isinstance(page, int) or page < 1:
+            continue
+        if color not in {"yellow", "blue", "green", "purple"}:
+            color = "yellow"
+        position = find_text_position(str(abs_path), page, text)
+        valid.append({
+            "text": text,
+            "page": page,
+            "color": color,
+            "reason": reason,
+            "position": position,  # may be None if not located
+            "locatable": position is not None,
+        })
+
+    return {"items": valid, "total": len(valid)}
 
 
 @router.post("/explain_section")

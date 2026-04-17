@@ -100,6 +100,17 @@ class TestFileServing:
         assert r.status_code == 404
 
 
+class TestReferences:
+    def test_references_endpoint_empty(self, client, uploaded_paper):
+        r = client.get(f"/papers/{uploaded_paper['id']}/references")
+        assert r.status_code == 200
+        assert r.json() == {"items": []}
+
+    def test_references_endpoint_missing_paper(self, client):
+        r = client.get("/papers/nope/references")
+        assert r.status_code == 404
+
+
 class TestOutlineAndSearch:
     def test_get_outline(self, client, uploaded_paper):
         r = client.get(f"/papers/{uploaded_paper['id']}/outline")

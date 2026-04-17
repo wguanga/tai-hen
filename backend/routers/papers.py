@@ -187,6 +187,18 @@ def get_outline(paper_id: str, session: Session = Depends(get_session)):
     return {"items": items}
 
 
+@router.get("/{paper_id}/references")
+def get_references(paper_id: str, session: Session = Depends(get_session)):
+    """Extract numbered references from the paper's References/Bibliography section."""
+    paper = PaperRepo(session).by_id(paper_id)
+    if not paper:
+        raise PaperNotFound(detail={"paper_id": paper_id})
+    from services.pdf_parser import extract_references
+    path = Path("data") / paper.file_path
+    items = extract_references(str(path))
+    return {"items": items}
+
+
 @router.get("/{paper_id}/search")
 def search_paper(paper_id: str, q: str = Query("", min_length=1), session: Session = Depends(get_session)):
     paper = PaperRepo(session).by_id(paper_id)

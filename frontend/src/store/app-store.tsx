@@ -7,6 +7,7 @@ export interface AppState {
   currentPaper: Paper | null;
   highlights: Highlight[];
   notes: Note[];
+  references: { index: number; text: string }[];
 
   activeColor: HighlightColor;
   activeHighlight: Highlight | null;
@@ -21,6 +22,7 @@ const initialState: AppState = {
   currentPaper: null,
   highlights: [],
   notes: [],
+  references: [],
   activeColor: 'yellow',
   activeHighlight: null,
   messages: [],
@@ -33,6 +35,7 @@ export type Action =
   | { type: 'ADD_PAPER'; paper: Paper }
   | { type: 'REMOVE_PAPER'; id: string }
   | { type: 'OPEN_PAPER'; paper: Paper; highlights: Highlight[]; notes: Note[] }
+  | { type: 'SET_REFERENCES'; references: { index: number; text: string }[] }
   | { type: 'CLOSE_PAPER' }
   | { type: 'ADD_HIGHLIGHT'; highlight: Highlight }
   | { type: 'UPDATE_HIGHLIGHT'; id: string; patch: Partial<Highlight> }
@@ -66,12 +69,15 @@ function reducer(state: AppState, action: Action): AppState {
         currentPaper: action.paper,
         highlights: action.highlights,
         notes: action.notes,
+        references: [],
         messages: [],
         streamBuffer: '',
         activeHighlight: null,
       };
+    case 'SET_REFERENCES':
+      return { ...state, references: action.references };
     case 'CLOSE_PAPER':
-      return { ...state, currentPaper: null, highlights: [], notes: [], messages: [], streamBuffer: '' };
+      return { ...state, currentPaper: null, highlights: [], notes: [], references: [], messages: [], streamBuffer: '' };
     case 'ADD_HIGHLIGHT':
       return { ...state, highlights: [...state.highlights, action.highlight] };
     case 'UPDATE_HIGHLIGHT':
