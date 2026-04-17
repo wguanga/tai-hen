@@ -11,12 +11,16 @@ router = APIRouter(tags=["config"])
 
 
 def _to_read(cfg: dict) -> ConfigRead:
+    from services.llm_service import model_supports_vision
+    provider = cfg.get("provider", "openai")
+    effective_model = cfg.get("ollama_model" if provider == "ollama" else "model", "")
     return ConfigRead(
-        provider=cfg.get("provider", "openai"),
+        provider=provider,
         model=cfg.get("model", "gpt-4o-mini"),
         has_api_key=bool(cfg.get("api_key")),
         base_url=cfg.get("base_url", ""),
         ollama_model=cfg.get("ollama_model", "qwen2.5:14b"),
+        supports_vision=model_supports_vision(provider, effective_model),
     )
 
 

@@ -218,6 +218,96 @@ def get_all_text(pdf_path: str, max_chars: int = 100_000) -> str:
         doc.close()
 
 
+def extract_figures(pdf_path: str, max_figures: int = 50) -> list[dict]:
+    """Extract images + captions from a PDF.
+
+    Strategy:
+    - For each page, get images via page.get_images()
+    - For each page, find caption text blocks starting with 'Figure N.' / 'Fig. N.' /
+      'Table N.' — associate each caption with the nearest image on the page
+    - Return list sorted by (page, figure_number)
+
+    Returns list of {number, page, kind ('figure'|'table'), caption, image_xref} dicts.
+    image_xref is the PyMuPDF internal reference for later rendering.
+    """
+    import re
+
+    doc = fitz.open(pdf_path)
+    out: list[dict] = []
+    try:
+        for page_idx, page in enumerate(doc):
+            page_num = page_idx + 1
+            blocks = page.get_text("dict").get("blocks", [])
+            # Collect image xrefs on this page in draw order
+            imgs = page.get_images(full=True)
+            image_xrefs = [img[0] for img in imgs]
+
+            # Find caption blocks
+            for b in blocks:
+                if b.get("type") != 0:  # 0 = text block
+                    continue
+                # Flatten block text
+                lines = b.get("lines", [])
+                text_parts: list[str] = []
+                for line in lines:
+                    for span in line.get("spans", []):
+                        text_parts.append(span.get("text", ""))
+                text = " ".join(text_parts).strip()
+                if not text:
+                    continue
+                m = re.match(r"^(Figure|Fig\.?|Table|Tab\.?)\s*(\d{1,3})[\.:\s-]", text, re.IGNORECASE)
+                if not m:
+                    continue
+                kind_raw = m.group(1).lower()
+                kind = "table" if kind_raw.startswith("tab") else "figure"
+                try:
+                    number = int(m.group(2))
+                except ValueError:
+                    continue
+                # Truncate caption to reasonable length
+                caption = text[:400]
+                # Pick first image on this page if present
+                xref = image_xrefs[0] if image_xrefs else None
+                out.append({
+                    "number": number,
+                    "page": page_num,
+                    "kind": kind,
+                    "caption": caption,
+                    "image_xref": xref,
+                })
+                if len(out) >= max_figures:
+                    break
+            if len(out) >= max_figures:
+                break
+        # De-dup: a page with Figure 1 caption + one image ok, but some PDFs repeat.
+        seen: set[tuple[int, str, int]] = set()
+        uniq: list[dict] = []
+        for f in out:
+            key = (f["page"], f["kind"], f["number"])
+            if key in seen:
+                continue
+            seen.add(key)
+            uniq.append(f)
+        return uniq
+    finally:
+        doc.close()
+
+
+def render_figure_png(pdf_path: str, image_xref: int) -> bytes | None:
+    """Render a specific PDF image xref to PNG bytes for frontend display."""
+    doc = fitz.open(pdf_path)
+    try:
+        try:
+            pix = fitz.Pixmap(doc, image_xref)
+            if pix.n - pix.alpha >= 4:  # CMYK → RGB
+                pix = fitz.Pixmap(fitz.csRGB, pix)
+            return pix.tobytes("png")
+        except Exception:
+            return None
+    finally:
+        doc.close()
+
+
 def extract_references(pdf_path: str, max_entries: int = 200) -> list[dict]:
     """Extract numbered reference entries from the References / Bibliography section.
 

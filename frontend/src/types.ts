@@ -76,4 +76,5 @@ export interface AppConfig {
   has_api_key: boolean;
   base_url: string;
   ollama_model: string;
+  supports_vision: boolean;
 }

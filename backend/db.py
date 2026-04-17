@@ -34,6 +34,19 @@ MIGRATIONS: dict[int, list[str]] = {
     2: [
         "ALTER TABLE papers ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'",
     ],
+    3: [
+        # glossary table: create_all already handles fresh DBs; this helps existing DBs.
+        "CREATE TABLE IF NOT EXISTS glossary ("
+        "  id TEXT PRIMARY KEY,"
+        "  term TEXT NOT NULL,"
+        "  definition TEXT NOT NULL,"
+        "  paper_id TEXT REFERENCES papers(id),"
+        "  source TEXT NOT NULL DEFAULT 'manual',"
+        "  created_at TEXT NOT NULL"
+        ")",
+        "CREATE INDEX IF NOT EXISTS idx_glossary_term ON glossary(term)",
+        "CREATE INDEX IF NOT EXISTS idx_glossary_paper ON glossary(paper_id)",
+    ],
 }
 
 

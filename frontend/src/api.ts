@@ -58,6 +58,15 @@ export const api = {
     request<{ items: { level: number; title: string; page: number }[] }>(`/papers/${id}/outline`),
   getReferences: (id: string) =>
     request<{ items: { index: number; text: string }[] }>(`/papers/${id}/references`),
+  getFigures: (id: string) =>
+    request<{
+      items: Array<{
+        number: number; page: number; kind: 'figure' | 'table';
+        caption: string; image_xref: number | null;
+      }>;
+    }>(`/papers/${id}/figures`),
+  figureImageUrl: (paperId: string, xref: number) =>
+    `${BASE}/papers/${paperId}/figures/${xref}.png`,
   getSummary: (id: string) =>
     request<{ summary: { id: string; content: string; created_at: string; updated_at: string } | null }>(`/papers/${id}/summary`),
   generateSummary: (id: string, regenerate = false) =>
@@ -65,6 +74,8 @@ export const api = {
       summary: { id: string; content: string; created_at: string; updated_at: string } | null;
       cached: boolean;
     }>(`/papers/${id}/summary?regenerate=${regenerate}`, { method: 'POST' }),
+  // Note: /ai/compare_papers is a streaming endpoint — use streamSSE directly with
+  // path '/ai/compare_papers' and body { paper_ids: string[] }.
   suggestHighlights: (id: string) =>
     request<{
       items: Array<{
@@ -122,6 +133,21 @@ export const api = {
     request<void>(`/papers/${paperId}/notes/${nid}`, { method: 'DELETE' }),
   exportMarkdown: (paperId: string) =>
     request<string>(`/papers/${paperId}/export`),
+
+  listGlossary: (q?: string) =>
+    request<{
+      items: Array<{ id: string; term: string; definition: string; paper_id: string | null; source: string; created_at: string }>;
+    }>(`/glossary${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  createGlossary: (body: { term: string; definition: string; paper_id?: string; source?: 'manual' | 'summary' | 'ai_explain' }) =>
+    request<{ id: string; term: string; definition: string; paper_id: string | null; source: string; created_at: string }>(
+      '/glossary', { method: 'POST', body: JSON.stringify(body) },
+    ),
+  updateGlossary: (id: string, body: { term?: string; definition?: string }) =>
+    request<{ id: string; term: string; definition: string }>(`/glossary/${id}`, {
+      method: 'PUT', body: JSON.stringify(body),
+    }),
+  deleteGlossary: (id: string) =>
+    request<void>(`/glossary/${id}`, { method: 'DELETE' }),
 
   searchNotesGlobal: (q: string) =>
     request<{

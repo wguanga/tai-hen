@@ -57,3 +57,9 @@ class LlmRateLimited(AppError):
     """LLM 服务限流，请稍后重试"""
     code = "LLM_RATE_LIMITED"
     http = 429
+
+
+class LlmVisionNotSupported(AppError):
+    """当前配置的模型不支持图像输入"""
+    code = "LLM_VISION_NOT_SUPPORTED"
+    http = 400

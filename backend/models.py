@@ -51,6 +51,16 @@ class Note(SQLModel, table=True):
     updated_at: str = Field(default_factory=utcnow)
 
 
+class GlossaryEntry(SQLModel, table=True):
+    __tablename__ = "glossary"
+    id: str = Field(default_factory=new_id, primary_key=True)
+    term: str = Field(index=True)
+    definition: str
+    paper_id: Optional[str] = Field(default=None, foreign_key="papers.id", index=True)
+    source: str = "manual"  # 'manual' | 'summary' | 'ai_explain'
+    created_at: str = Field(default_factory=utcnow)
+
+
 class Chat(SQLModel, table=True):
     __tablename__ = "chats"
     id: str = Field(default_factory=new_id, primary_key=True)

@@ -165,6 +165,10 @@ async def generate_summary(paper_id: str, regenerate: bool = Query(False), sessi
         "content": content,
         "source": "ai_summary",
     })
+
+    # Auto-extract glossary terms from "## 关键术语" section
+    _auto_extract_glossary(session, paper_id, content)
+
     return {
         "summary": {
             "id": note.id,
@@ -176,6 +180,53 @@ async def generate_summary(paper_id: str, regenerate: bool = Query(False), sessi
     }
 
 
+def _auto_extract_glossary(session, paper_id: str, summary_md: str) -> int:
+    """Parse '## 关键术语' section in a summary and upsert each term into glossary."""
+    import re
+    from repositories.glossary_repo import GlossaryRepo
+
+    # Find section
+    match = re.search(r"##\s*关键术语\s*\n(.+?)(?=\n##|\Z)", summary_md, re.DOTALL)
+    if not match:
+        return 0
+    section = match.group(1).strip()
+
+    # Each line like '- TermName: definition' or '- **Term**: definition'
+    entries: list[tuple[str, str]] = []
+    for line in section.splitlines():
+        line = line.strip()
+        # Strip a single leading list marker (- | * | • | N. ), plus spaces
+        stripped = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s+", "", line)
+        if stripped == line:
+            continue  # no marker → skip non-list line
+        # Remove bold markers around the term/whole-line
+        body = re.sub(r"\*\*(.+?)\*\*", r"\1", stripped)
+        # Term: def  (tolerate full-width colon)
+        m = re.match(r"^([^:：]+)[:：]\s*(.+)$", body)
+        if not m:
+            continue
+        term = m.group(1).strip().rstrip(".。")
+        definition = m.group(2).strip()
+        if len(term) < 1 or len(definition) < 2:
+            continue
+        entries.append((term, definition))
+
+    repo = GlossaryRepo(session)
+    count = 0
+    for term, definition in entries[:30]:
+        existing = repo.find_by_term(term)
+        if existing:
+            continue  # don't overwrite existing entries from other papers
+        repo.create({
+            "term": term,
+            "definition": definition,
+            "paper_id": paper_id,
+            "source": "summary",
+        })
+        count += 1
+    return count
+
+
 @router.get("/{paper_id}/outline")
 def get_outline(paper_id: str, session: Session = Depends(get_session)):
     paper = PaperRepo(session).by_id(paper_id)
@@ -185,6 +236,30 @@ def get_outline(paper_id: str, session: Session = Depends(get_session)):
     path = Path("data") / paper.file_path
     items = get_outline(str(path))
     return {"items": items}
+
+
+@router.get("/{paper_id}/figures")
+def get_figures(paper_id: str, session: Session = Depends(get_session)):
+    paper = PaperRepo(session).by_id(paper_id)
+    if not paper:
+        raise PaperNotFound(detail={"paper_id": paper_id})
+    from services.pdf_parser import extract_figures
+    path = Path("data") / paper.file_path
+    items = extract_figures(str(path))
+    return {"items": items}
+
+
+@router.get("/{paper_id}/figures/{xref}.png")
+def get_figure_image(paper_id: str, xref: int, session: Session = Depends(get_session)):
+    paper = PaperRepo(session).by_id(paper_id)
+    if not paper:
+        raise PaperNotFound(detail={"paper_id": paper_id})
+    from services.pdf_parser import render_figure_png
+    path = Path("data") / paper.file_path
+    png = render_figure_png(str(path), xref)
+    if png is None:
+        raise PaperNotFound(detail={"reason": "figure image not found"})
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
 
 
 @router.get("/{paper_id}/references")

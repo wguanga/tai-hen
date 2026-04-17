@@ -7,6 +7,8 @@ import { COLOR_HEX, COLOR_LABELS, type HighlightColor } from '../types';
 interface ToolbarProps {
   onOpenSettings: () => void;
   onOpenGlobalSearch: () => void;
+  onOpenCompare: () => void;
+  onOpenGlossary: () => void;
   leftCollapsed: boolean;
   onToggleLeft: () => void;
   rightCollapsed: boolean;
@@ -17,7 +19,7 @@ interface ToolbarProps {
   onToggleFocus: () => void;
 }
 
-export function Toolbar({ onOpenSettings, onOpenGlobalSearch, leftCollapsed, onToggleLeft, rightCollapsed, onToggleRight, dark, onToggleDark, focusMode, onToggleFocus }: ToolbarProps) {
+export function Toolbar({ onOpenSettings, onOpenGlobalSearch, onOpenCompare, onOpenGlossary, leftCollapsed, onToggleLeft, rightCollapsed, onToggleRight, dark, onToggleDark, focusMode, onToggleFocus }: ToolbarProps) {
   const { state, dispatch } = useAppStore();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -108,6 +110,14 @@ export function Toolbar({ onOpenSettings, onOpenGlobalSearch, leftCollapsed, onT
       <button onClick={onOpenGlobalSearch} title="跨论文笔记搜索 (Ctrl+Shift+F)"
         className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">
         🔎 搜笔记
+      </button>
+      <button onClick={onOpenCompare} title="对比 2-5 篇论文"
+        className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">
+        ⚖️ 对比
+      </button>
+      <button onClick={onOpenGlossary} title="术语库"
+        className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">
+        📖 术语
       </button>
       <button onClick={onToggleDark} title={dark ? '浅色模式' : '深色模式'}
         className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">

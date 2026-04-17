@@ -64,6 +64,25 @@ SYSTEM_PROMPTS = {
         "- 若用户的高亮/笔记上下文（由系统注入）和你的回答相关，优先基于这些内容，避免重复讲解"
     ),
 
+    "compare_papers": (
+        "你是学术论文对比分析助手。阅读多篇论文的摘要或开头文本，输出结构化对比报告。\n"
+        "\n"
+        "严格使用下列 Markdown 小节（缺一不可）：\n"
+        "## 问题设定对比\n"
+        "## 方法对比\n"
+        "## 实验与结果对比\n"
+        "## 相同点\n"
+        "## 不同点\n"
+        "## 综合评价 / 适用场景\n"
+        "\n"
+        "规则：\n"
+        "- 用论文标题（前 30 字）而非「论文 1/2」来称呼各论文\n"
+        "- 每节内用列表，每条 1-2 句\n"
+        "- 引用论文原文时标注 (p.N)\n"
+        "- 基于提供的文本，不编造数据\n"
+        "- 总字数控制在 1500 字内，中文"
+    ),
+
     "suggest_highlights": (
         "你是学术论文精读助手。阅读以下带页码标记的论文文本，从中挑出 5-10 个最值得用户高亮的句子，"
         "帮助读者快速抓住重点。\n"
@@ -84,6 +103,23 @@ SYSTEM_PROMPTS = {
         "- 尽量覆盖不同章节和不同颜色"
     ),
 }
+
+
+# Model vision capability detection. Models not listed → no vision.
+VISION_MODEL_PREFIXES = {
+    "openai": ("gpt-4o", "gpt-4-turbo", "gpt-4-vision", "o1", "o3"),
+    "anthropic": ("claude-3-", "claude-3.5-", "claude-3-5-", "claude-4", "claude-sonnet-4", "claude-opus-4", "claude-haiku-4"),
+    "ollama": ("llava", "bakllava", "moondream", "llama3.2-vision", "qwen2.5-vl", "qwen-vl"),
+}
+
+
+def model_supports_vision(provider: str, model: str) -> bool:
+    """Return True if the given provider+model can accept images."""
+    if not model:
+        return False
+    model_l = model.lower()
+    prefixes = VISION_MODEL_PREFIXES.get(provider, ())
+    return any(model_l.startswith(p) for p in prefixes)
 
 
 async def stream_llm(messages: list[dict], system: str) -> AsyncGenerator[str, None]:
@@ -140,6 +176,80 @@ async def _stream_anthropic(messages, system, config):
                 yield text
     except Exception as e:
         raise LlmUpstreamError(str(e))
+
+
+async def stream_llm_with_image(image_bytes: bytes, text_prompt: str, system: str) -> AsyncGenerator[str, None]:
+    """Stream an LLM response for a vision-capable model given an image + text."""
+    import base64
+    config = load_config()
+    provider = config.get("provider", "openai")
+    api_key = config.get("api_key", "")
+    if provider != "ollama" and not api_key:
+        raise LlmConfigMissing()
+
+    b64 = base64.b64encode(image_bytes).decode("ascii")
+
+    if provider == "openai":
+        from openai import AsyncOpenAI
+        try:
+            client = AsyncOpenAI(api_key=api_key, base_url=config.get("base_url") or None)
+            stream = await client.chat.completions.create(
+                model=config.get("model", "gpt-4o-mini"),
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": text_prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                    ]},
+                ],
+                stream=True,
+            )
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as e:
+            raise LlmUpstreamError(str(e))
+
+    elif provider == "anthropic":
+        import anthropic
+        try:
+            client = anthropic.AsyncAnthropic(api_key=api_key)
+            async with client.messages.stream(
+                model=config.get("model", "claude-sonnet-4-6"),
+                max_tokens=2048,
+                system=system,
+                messages=[{"role": "user", "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
+                    {"type": "text", "text": text_prompt},
+                ]}],
+            ) as stream:
+                async for text in stream.text_stream:
+                    yield text
+        except Exception as e:
+            raise LlmUpstreamError(str(e))
+
+    elif provider == "ollama":
+        from openai import AsyncOpenAI
+        try:
+            client = AsyncOpenAI(api_key="ollama", base_url="http://localhost:11434/v1")
+            stream = await client.chat.completions.create(
+                model=config.get("ollama_model", "llava"),
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": text_prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                    ]},
+                ],
+                stream=True,
+            )
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as e:
+            raise LlmUpstreamError(str(e))
+    else:
+        raise LlmUpstreamError(f"Unknown provider: {provider}")
 
 
 async def _stream_ollama(messages, system, config):

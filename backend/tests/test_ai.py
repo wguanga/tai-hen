@@ -68,6 +68,42 @@ class TestSummarize:
         assert len(chunk_text) > 0
 
 
+class TestComparePapers:
+    def _upload_second(self, client):
+        import fitz
+        doc = fitz.open()
+        doc.set_metadata({"title": "Second Paper"})
+        p = doc.new_page()
+        p.insert_text((72, 72), "distinct content for second paper")
+        data = doc.tobytes()
+        doc.close()
+        return client.post(
+            "/papers/upload",
+            files={"file": ("p2.pdf", data, "application/pdf")},
+        ).json()
+
+    def test_compare_two_papers(self, client, uploaded_paper, mock_llm):
+        p2 = self._upload_second(client)
+        r = client.post("/ai/compare_papers", json={
+            "paper_ids": [uploaded_paper["id"], p2["id"]],
+        })
+        assert r.status_code == 200
+        events = _parse_sse(r.text)
+        assert any(e["type"] == "done" for e in events)
+
+    def test_compare_needs_at_least_two(self, client, uploaded_paper, mock_llm):
+        r = client.post("/ai/compare_papers", json={
+            "paper_ids": [uploaded_paper["id"]],
+        })
+        assert r.status_code == 422
+
+    def test_compare_missing_paper_404(self, client, uploaded_paper, mock_llm):
+        r = client.post("/ai/compare_papers", json={
+            "paper_ids": [uploaded_paper["id"], "nope"],
+        })
+        assert r.status_code == 404
+
+
 class TestExplainSection:
     def test_explain_section_streams(self, client, uploaded_paper, mock_llm):
         pid = uploaded_paper["id"]

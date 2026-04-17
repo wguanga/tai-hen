@@ -8,11 +8,15 @@ from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
 from deps import get_session
-from errors import AppError, PaperNotFound
+from errors import AppError, LlmVisionNotSupported, PaperNotFound
 from repositories.chat_repo import ChatRepo
 from repositories.paper_repo import PaperRepo
-from schemas import ChatRequest, ExplainRequest, ExplainSectionRequest, SummarizeRequest, TranslateRequest
-from services.llm_service import SYSTEM_PROMPTS, stream_llm
+from schemas import (
+    ChatRequest, ComparePapersRequest, ExplainFigureRequest, ExplainRequest,
+    ExplainSectionRequest, SummarizeRequest, TranslateRequest,
+)
+from services.config_service import load_config
+from services.llm_service import SYSTEM_PROMPTS, model_supports_vision, stream_llm, stream_llm_with_image
 from services.pdf_parser import (
     find_text_position,
     get_all_text,
@@ -205,6 +209,74 @@ async def suggest_highlights(req: Request, body: SummarizeRequest, session: Sess
         })
 
     return {"items": valid, "total": len(valid)}
+
+
+@router.post("/compare_papers")
+async def compare_papers(req: Request, body: ComparePapersRequest, session: Session = Depends(get_session)):
+    """Generate a structured comparison report for 2-5 papers."""
+    from repositories.note_repo import NoteRepo
+
+    paper_repo = PaperRepo(session)
+    note_repo = NoteRepo(session)
+
+    blocks: list[str] = []
+    for pid in body.paper_ids:
+        paper = paper_repo.by_id(pid)
+        if not paper:
+            raise PaperNotFound(detail={"paper_id": pid})
+        # Prefer existing AI summary; fallback to paper head text
+        summaries = note_repo.list_for_paper(pid, source="ai_summary")
+        if summaries:
+            body_text = summaries[0].content
+        else:
+            abs_path = Path("data") / paper.file_path
+            body_text = get_all_text(str(abs_path), max_chars=6_000)
+        blocks.append(f"## 论文: {paper.title}\n\n{body_text}")
+
+    user_content = "下面是待对比的论文内容，请严格按系统提示的格式输出对比报告：\n\n" + "\n\n---\n\n".join(blocks)
+    messages = [{"role": "user", "content": user_content}]
+    return _sse_response(_sse_stream(req, stream_llm(messages, SYSTEM_PROMPTS["compare_papers"])))
+
+
+@router.post("/explain_figure")
+async def explain_figure(req: Request, body: ExplainFigureRequest, session: Session = Depends(get_session)):
+    """Explain a figure/table. Requires vision-capable model when image_xref is set."""
+    paper = PaperRepo(session).by_id(body.paper_id)
+    if not paper:
+        raise PaperNotFound(detail={"paper_id": body.paper_id})
+
+    config = load_config()
+    provider = config.get("provider", "openai")
+    effective_model = config.get("ollama_model" if provider == "ollama" else "model", "")
+    vision = model_supports_vision(provider, effective_model)
+
+    if not vision:
+        raise LlmVisionNotSupported()
+
+    abs_path = Path("data") / paper.file_path
+    # Get image bytes
+    from services.pdf_parser import render_figure_png, get_page_text
+    image_bytes = render_figure_png(str(abs_path), body.image_xref) if body.image_xref else None
+    if image_bytes is None:
+        raise PaperNotFound(detail={"reason": "figure image not available"})
+
+    # Get surrounding text for context
+    context = get_page_text(str(abs_path), body.page)[:2000]
+    label = "图" if body.kind == "figure" else "表"
+    prompt = (
+        f"# {label} {body.number}（第 {body.page} 页）\n\n"
+        f"## 标题 (caption)\n{body.caption}\n\n"
+        f"## 所在页面的部分文字（供上下文）\n{context}\n\n"
+        f"# 任务\n"
+        f"解释这张{label}的内容：它展示了什么、关键数字/趋势/结构是什么、在论文中起什么作用。"
+        f"如果是表格，按列解释字段含义。用中文回答，控制在 400 字内。"
+    )
+    system = (
+        "你是学术论文阅读助手。基于用户提供的图像 + 标题 + 上下文，解释这张图/表的含义。"
+        "不要编造图中不存在的数字或趋势。中文回答，保留关键英文术语。"
+    )
+
+    return _sse_response(_sse_stream(req, stream_llm_with_image(image_bytes, prompt, system)))
 
 
 @router.post("/explain_section")

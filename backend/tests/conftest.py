@@ -34,11 +34,13 @@ def _reload_backend_modules():
         "repositories.highlight_repo",
         "repositories.note_repo",
         "repositories.chat_repo",
+        "repositories.glossary_repo",
         "routers.papers",
         "routers.highlights",
         "routers.notes",
         "routers.ai",
         "routers.search",
+        "routers.glossary",
         "routers.config",
         "deps",
     ):

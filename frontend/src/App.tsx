@@ -4,7 +4,10 @@ import { AiPanel } from './components/AiPanel';
 import { NotesPanel } from './components/NotesPanel';
 import { PaperList } from './components/PaperList';
 import { PdfReader } from './components/PdfReader';
+import { ComparePapersModal } from './components/ComparePapersModal';
+import { FiguresPanel } from './components/FiguresPanel';
 import { GlobalSearch } from './components/GlobalSearch';
+import { GlossaryModal } from './components/GlossaryModal';
 import { SettingsModal } from './components/SettingsModal';
 import { SummaryPanel } from './components/SummaryPanel';
 import { Toolbar } from './components/Toolbar';
@@ -26,6 +29,8 @@ function Layout() {
   const { toast } = useToast();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -106,6 +111,8 @@ function Layout() {
           onToggleDark={toggleDark}
           focusMode={focusMode}
           onToggleFocus={() => setFocusMode((v) => !v)}
+          onOpenCompare={() => setCompareOpen(true)}
+          onOpenGlossary={() => setGlossaryOpen(true)}
         />
       )}
       <div className="flex flex-1 min-h-0">
@@ -127,6 +134,8 @@ function Layout() {
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
       {globalSearchOpen && <GlobalSearch onClose={() => setGlobalSearchOpen(false)} />}
+      {compareOpen && <ComparePapersModal onClose={() => setCompareOpen(false)} />}
+      {glossaryOpen && <GlossaryModal onClose={() => setGlossaryOpen(false)} />}
 
       {/* close Layout root below */}
 
@@ -143,38 +152,37 @@ function Layout() {
   );
 }
 
-type RightTab = 'summary' | 'ai';
+type RightTab = 'summary' | 'ai' | 'figures';
 
 function RightPanel() {
   const [tab, setTab] = useState<RightTab>('summary');
+  const tabs: { key: RightTab; label: string }[] = [
+    { key: 'summary', label: '📑 摘要' },
+    { key: 'ai', label: '🤖 AI' },
+    { key: 'figures', label: '📊 图表' },
+  ];
   return (
     <div className="w-96 border-l flex flex-col flex-shrink-0">
       <div className="flex border-b bg-white dark:bg-gray-800 flex-shrink-0">
-        <button
-          onClick={() => setTab('summary')}
-          className={
-            'flex-1 text-sm py-1.5 ' +
-            (tab === 'summary'
-              ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium border-b-2 border-indigo-500'
-              : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700')
-          }
-        >
-          📑 摘要
-        </button>
-        <button
-          onClick={() => setTab('ai')}
-          className={
-            'flex-1 text-sm py-1.5 ' +
-            (tab === 'ai'
-              ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium border-b-2 border-indigo-500'
-              : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700')
-          }
-        >
-          🤖 AI 对话
-        </button>
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={
+              'flex-1 text-sm py-1.5 ' +
+              (tab === t.key
+                ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium border-b-2 border-indigo-500'
+                : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700')
+            }
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
       <div className="flex-1 min-h-0">
-        {tab === 'summary' ? <SummaryPanel /> : <AiPanel />}
+        {tab === 'summary' && <SummaryPanel />}
+        {tab === 'ai' && <AiPanel />}
+        {tab === 'figures' && <FiguresPanel onGoToPage={(p) => (window as any).__goToPage?.(p)} />}
       </div>
       <div className="h-56 border-t flex-shrink-0">
         <NotesPanel />

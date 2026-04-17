@@ -69,6 +69,13 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="text-lg font-medium mb-3">设置</div>
+        {loaded && (
+          <div className="text-xs mb-3 px-2 py-1 rounded bg-gray-50 dark:bg-gray-700">
+            视觉能力：{loaded.supports_vision
+              ? <span className="text-green-600">✓ 当前模型支持图像（可 AI 解读图表）</span>
+              : <span className="text-orange-500">✗ 当前模型不支持图像 — 切至 gpt-4o / claude-3.x / llava 等</span>}
+          </div>
+        )}
 
         <label className="block text-xs text-gray-600 mb-1">Provider</label>
         <select

@@ -130,6 +130,19 @@ class ExplainSectionRequest(BaseModel):
     end_page: Optional[int] = None
 
 
+class ExplainFigureRequest(BaseModel):
+    paper_id: str
+    number: int
+    page: int
+    kind: Literal["figure", "table"] = "figure"
+    caption: str
+    image_xref: Optional[int] = None
+
+
+class ComparePapersRequest(BaseModel):
+    paper_ids: list[str] = Field(min_length=2, max_length=5)
+
+
 class ChatRequest(BaseModel):
     paper_id: str
     highlight_id: Optional[str] = None
@@ -142,6 +155,32 @@ class ConfigRead(BaseModel):
     has_api_key: bool = False
     base_url: str = ""
     ollama_model: str = "qwen2.5:14b"
+    supports_vision: bool = False
+
+
+class GlossaryCreate(BaseModel):
+    term: str = Field(min_length=1, max_length=120)
+    definition: str = Field(min_length=1)
+    paper_id: Optional[str] = None
+    source: Literal["manual", "summary", "ai_explain"] = "manual"
+
+
+class GlossaryUpdate(BaseModel):
+    term: Optional[str] = None
+    definition: Optional[str] = None
+
+
+class GlossaryRead(BaseModel):
+    id: str
+    term: str
+    definition: str
+    paper_id: Optional[str] = None
+    source: str
+    created_at: str
+
+
+class GlossaryList(BaseModel):
+    items: list[GlossaryRead]
 
 
 class ConfigWrite(BaseModel):

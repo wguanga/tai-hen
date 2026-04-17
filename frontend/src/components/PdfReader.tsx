@@ -11,6 +11,7 @@ import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useHighlight, type CapturedSelection } from '../hooks/useHighlight';
 import { useKeyboard } from '../hooks/useKeyboard';
 import { usePageVirtualization } from '../hooks/usePageVirtualization';
+import { usePdfCitations } from '../hooks/usePdfCitations';
 import { streamSSE } from '../hooks/useStream';
 import { useToast } from './Toast';
 import { NoteInput } from './NoteInput';
@@ -46,6 +47,16 @@ export function PdfReader() {
   const paper = state.currentPaper;
   const pageWidth = Math.round(780 * zoom);
   const { renderedPages, registerPage, setPageHeight, heightFor } = usePageVirtualization(pageCount, scrollRef);
+
+  // PDF [n] citations → build a map and let the hook process text layer
+  const refIndex = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const r of state.references) m.set(r.index, r.text);
+    return m;
+  }, [state.references]);
+  usePdfCitations(scrollRef, refIndex);
+
+  const [citePopover, setCitePopover] = useState<{ nums: number[]; x: number; y: number } | null>(null);
 
   // Reading progress: save current page
   useEffect(() => {
@@ -185,11 +196,33 @@ export function PdfReader() {
     return () => window.removeEventListener('contextmenu', onContextMenu);
   }, [paper?.id, capture]);
 
-  // Click on existing highlight
+  // Dismiss citation popover on outside click / Esc
+  useEffect(() => {
+    if (!citePopover) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCitePopover(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [citePopover]);
+
+  // Click on existing highlight OR citation [n]
   useEffect(() => {
     if (!paper) return;
     const onClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
+      // Citation click inside PDF text layer
+      if (target?.classList?.contains('cite-mark')) {
+        const raw = target.dataset.citeNums || '';
+        const nums = raw.split(/\s*,\s*/).map((n) => parseInt(n, 10)).filter((n) => !isNaN(n));
+        if (nums.length > 0) {
+          e.stopPropagation();
+          setMenu(null);
+          setHlMenu(null);
+          setCitePopover({ nums, x: e.clientX, y: e.clientY });
+          return;
+        }
+      }
+      // Any non-citation click closes the cite popover
+      if (citePopover) setCitePopover(null);
       const hlId = target.dataset?.hl;
       if (!hlId) return;
       const hl = state.highlights.find((h) => h.id === hlId);
@@ -200,12 +233,18 @@ export function PdfReader() {
     };
     window.addEventListener('click', onClick);
     return () => window.removeEventListener('click', onClick);
-  }, [paper?.id, state.highlights]);
+  }, [paper?.id, state.highlights, citePopover]);
 
   const goToPage = useCallback((page: number) => {
     const el = pageRefs.current.get(page);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
+
+  // Expose goToPage globally so other panels (figures, etc.) can use it
+  useEffect(() => {
+    (window as any).__goToPage = goToPage;
+    return () => { delete (window as any).__goToPage; };
+  }, [goToPage]);
 
   if (!paper) {
     return (
@@ -367,6 +406,25 @@ export function PdfReader() {
         label: '📝 查看关联笔记',
         onClick: () => (window as any).__scrollToNote?.(hl.id),
       }] : []),
+      {
+        label: '📖 加入术语库',
+        onClick: async () => {
+          const term = hl.text.trim().slice(0, 120);
+          const definition = prompt(`定义 "${term.slice(0, 40)}"：`) || '';
+          if (!definition.trim()) return;
+          try {
+            await api.createGlossary({
+              term,
+              definition: definition.trim(),
+              paper_id: paper!.id,
+              source: 'manual',
+            });
+            toast('已加入术语库', 'success');
+          } catch (e) {
+            toast('添加失败：' + (e as Error).message, 'error');
+          }
+        },
+      },
       {
         label: '📋 复制原文',
         onClick: async () => {
@@ -538,6 +596,29 @@ export function PdfReader() {
       )}
       {hlMenu && (
         <ContextMenu x={hlMenu.x} y={hlMenu.y} items={buildHlMenuItems(hlMenu.highlight)} onClose={() => setHlMenu(null)} />
+      )}
+
+      {/* Citation popover (from clicking [n] inside PDF) */}
+      {citePopover && (
+        <div
+          className="fixed z-[55] bg-gray-900 text-white text-xs rounded shadow-2xl p-2 w-80"
+          style={{
+            left: Math.min(window.innerWidth - 330, citePopover.x),
+            top: Math.min(window.innerHeight - 200, citePopover.y + 16),
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-medium">📚 参考文献</span>
+            <button onClick={() => setCitePopover(null)} className="text-gray-400 hover:text-white">✕</button>
+          </div>
+          {citePopover.nums.map((n) => (
+            <div key={n} className="mb-1 last:mb-0 leading-relaxed">
+              <span className="text-indigo-300 mr-1">[{n}]</span>
+              {refIndex.get(n) ?? <span className="text-gray-400 italic">未在参考文献中找到</span>}
+            </div>
+          ))}
+        </div>
       )}
 
       {/* Bilingual popover */}
