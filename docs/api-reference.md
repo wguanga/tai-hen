@@ -243,7 +243,7 @@ Content-Type: text/markdown; charset=utf-8
 Content-Disposition: attachment; filename="<title>-notes.md"
 ```
 
-正文模板见 `.claude/conventions.md#export-template`。
+正文模板见 `conventions.md#export-template`。
 
 ---
 

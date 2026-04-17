@@ -41,5 +41,5 @@ Thumbs.db
 *.swp
 *.swo
 
-# === Claude Code 本地设置 ===
-.claude/settings.local.json
+# === Claude Code 本地工作区（项目文档在 docs/ 下）===
+.claude/

@@ -226,7 +226,8 @@ pythonProcess.on('exit', (code) => {
 
 ## 11. 与 Claude Code 协作的技巧 🟡
 
-- 修改设计时：**让 Claude 同时改 `.claude/` 对应文件 + `changelog.md`**
-- 要跨多文件改：先让 Claude 读 `.claude/README.md` 决定要读哪些
-- 要生成新端点：贴 `.claude/api-reference.md` + `.claude/backend-guide.md` 给 Claude
-- 要改提示词：只贴 `.claude/ai-prompts.md` 足够
+- 修改设计时：**让 Claude 同时改 `docs/` 对应文件 + `docs/changelog.md`**
+- 要跨多文件改：先让 Claude 读 `docs/README.md` 决定要读哪些
+- 要生成新端点：贴 `docs/api-reference.md` + `docs/backend-guide.md` 给 Claude
+- 要改提示词：只贴 `docs/ai-prompts.md` 足够
+- 测试约定和协作约定在 `.claude/testing.md` / `.claude/AGREEMENTS.md`（本地，不入版本库）

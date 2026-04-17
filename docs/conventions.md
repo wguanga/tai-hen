@@ -143,7 +143,7 @@ docs(.claude): update db-schema with WAL notes
 
 默认不写注释。仅当下列情况写：
 - 非显而易见的 WHY（约束、陷阱、外部依赖的怪癖）
-- 引用某个 ADR：`# See .claude/decisions.md#adr-003`
+- 引用某个 ADR：`# See docs/decisions.md#adr-003`
 - 临时 `# TODO(v2): ...` 必须带人名/版本标签
 
 不写：

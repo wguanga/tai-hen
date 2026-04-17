@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-04-17 · 文档布局重构：项目文档搬到 docs/，.claude/ 降级为 agent 本地工作区
+- `docs/`（新）：所有项目文档（architecture / api-reference / db-schema / frontend-guide /
+  backend-guide / ai-prompts / conventions / dev-tips / decisions / changelog）入版本库
+- `.claude/`：gitignore；保留 `AGREEMENTS.md`（协作约定）+ `testing.md`（测试规约）+ `README.md`（agent 索引）
+- `.gitignore`：`.claude/settings.local.json` 改为 `.claude/`（整目录忽略）
+- `CLAUDE.md` / 根 `README.md`：所有 `.claude/*.md` 引用改为 `docs/*.md`
+- `docs/README.md` 改写为纯项目文档索引；`.claude/README.md` 改写为 agent 索引（指向两边）
+- 原因：用户希望项目交付物（docs）与 agent 工作笔记（.claude）分离
+- 影响：其他人 clone 仓库得到干净文档；agent 协作仍完整在本地
+
 ## 2026-04-15 · 初始化 .claude/ 文档体系
 - `README.md`：新建，索引 + 使用约定
 - `architecture.md`：新建，分层架构 + 数据流 + 性能预算
