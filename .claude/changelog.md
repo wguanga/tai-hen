@@ -18,6 +18,15 @@
 - `dev-tips.md`：新建，启动、SSE 调试、常见坑 11 条
 - `decisions.md`：新建，ADR-001 至 ADR-012
 
+## 2026-04-17 · 建立测试基线 + 硬性规约（ADR-013）
+- `testing.md`：新建，完整测试规约 + fixture 说明 + mock 约定
+- `README.md`：索引新增 testing.md 入口，文件清单加一行
+- `decisions.md`：新增 ADR-013（新功能必须配套测试）
+- `backend/tests/`：conftest + 6 文件，共 70 测试
+- `frontend/src/**/*.test.ts(x)`：3 文件，共 25 测试
+- `backend/repositories/paper_repo.py`：修复级联删除 bug（SQLModel 不生成 ON DELETE CASCADE，手工删子表）
+- 原因：v0.1 阶段无测试，级联删除 bug 只在写第一条测试时才暴露。立规矩：以后新功能不带测试不算完工
+
 ## 2026-04-15 · 对 CLAUDE.md 的**补充/修订**（未改原文，以本目录为准）
 | 主题 | CLAUDE.md 原版 | 本目录（以本目录为准） |
 |------|---------------|-----------------------|

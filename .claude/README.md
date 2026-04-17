@@ -17,6 +17,7 @@
 | 改 LLM 提示词或切换模型 | `ai-prompts.md` |
 | 不知道某个命名/错误码怎么定 | `conventions.md` |
 | 卡住了、要调试 | `dev-tips.md` |
+| 写测试（**新功能必须配套测试**） | `testing.md` |
 | 想知道为什么选了某个技术 | `decisions.md` |
 | 要修改设计 | 改对应文件 + 追加一条 `changelog.md` |
 
@@ -35,6 +36,7 @@
 | `ai-prompts.md` | 所有 LLM 系统提示词（集中版本化） | 每次改提示词 |
 | `conventions.md` | 命名、错误格式、日期/ID 约定 | 补充新规范 |
 | `dev-tips.md` | 启动命令、调试方法、常见坑 | 遇到新坑时 |
+| `testing.md` | 测试规约、fixture、命令、坑 | 新增测试类型/fixture 时 |
 | `decisions.md` | ADR（架构决策记录） | 做出不可逆决策时 |
 | `changelog.md` | 设计变更日志 | **每次改设计必填** |
 

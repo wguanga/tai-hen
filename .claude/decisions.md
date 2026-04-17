@@ -165,6 +165,29 @@
 
 ---
 
+## ADR-013 · 新功能必须配套测试
+**状态**：Accepted · **日期**：2026-04-17
+
+**背景**：v0.1 原型阶段没写测试就快速迭代。后来发现 `PaperRepo.delete` 从一开始就有级联删除 bug（SQLModel Field 不生成 ON DELETE CASCADE），但没测试没暴露。
+
+**决定**：
+- 任何 PR/commit 涉及新功能或修 bug 都必须带测试
+- 写 bug 修复时先写失败测试 → 再改代码 → 测试转绿
+- 新加 service / router 端点至少 3 个测试：happy path、错误路径、边界
+
+**代价**：每个功能多花 30%–50% 时间。
+**收益**：
+- 防重复 bug（ON DELETE CASCADE 这类"以为默认有"的就是不会再出）
+- 开发时 TDD 先写测试常常能发现 API 设计缺陷
+- 以后 refactor 有信心
+
+**具体规约**：见 `testing.md`。
+**基准覆盖**（2026-04-17 建立）：
+- 后端 70 tests（pdf_parser / papers / highlights / notes / export / config / ai）
+- 前端 25 tests（app-store reducer / useStream / api）
+
+---
+
 ## ADR 状态流转
 
 - **Proposed**：草案，未采纳

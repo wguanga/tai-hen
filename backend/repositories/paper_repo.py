@@ -27,6 +27,12 @@ class PaperRepo:
         p = self.s.get(Paper, pid)
         if not p:
             return False
+        # SQLModel Field(foreign_key=...) does not emit ON DELETE CASCADE,
+        # so delete children explicitly to keep FK constraints happy.
+        from sqlalchemy import text
+        self.s.exec(text("DELETE FROM chats WHERE paper_id = :pid").bindparams(pid=pid))
+        self.s.exec(text("DELETE FROM notes WHERE paper_id = :pid").bindparams(pid=pid))
+        self.s.exec(text("DELETE FROM highlights WHERE paper_id = :pid").bindparams(pid=pid))
         self.s.delete(p)
         self.s.commit()
         return True

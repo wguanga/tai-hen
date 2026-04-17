@@ -144,6 +144,18 @@ paper-reader/
 - 改提示词 → 同步更新 `.claude/ai-prompts.md`
 - 做架构决策 → 写入 `.claude/decisions.md`（ADR）
 
+🧪 **测试硬性规约（ADR-013）**：新增/修改功能必须配套测试，详见 `.claude/testing.md`。
+
+```bash
+# 后端
+cd backend && pip install -r requirements-dev.txt && python -m pytest tests/
+
+# 前端
+cd frontend && npm test
+```
+
+当前基线：后端 70 tests · 前端 25 tests。
+
 ---
 
 ## 当前版本
