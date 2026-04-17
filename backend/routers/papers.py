@@ -72,6 +72,28 @@ def get_paper_file(paper_id: str, session: Session = Depends(get_session)):
     )
 
 
+@router.get("/{paper_id}/outline")
+def get_outline(paper_id: str, session: Session = Depends(get_session)):
+    paper = PaperRepo(session).by_id(paper_id)
+    if not paper:
+        raise PaperNotFound(detail={"paper_id": paper_id})
+    from services.pdf_parser import get_outline
+    path = Path("data") / paper.file_path
+    items = get_outline(str(path))
+    return {"items": items}
+
+
+@router.get("/{paper_id}/search")
+def search_paper(paper_id: str, q: str = Query("", min_length=1), session: Session = Depends(get_session)):
+    paper = PaperRepo(session).by_id(paper_id)
+    if not paper:
+        raise PaperNotFound(detail={"paper_id": paper_id})
+    from services.pdf_parser import search_text
+    path = Path("data") / paper.file_path
+    results = search_text(str(path), q)
+    return {"items": results, "total": len(results)}
+
+
 @router.delete("/{paper_id}", status_code=204)
 def delete_paper(paper_id: str, session: Session = Depends(get_session)):
     repo = PaperRepo(session)

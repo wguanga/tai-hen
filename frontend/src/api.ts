@@ -49,6 +49,10 @@ export const api = {
   deletePaper: (id: string) =>
     request<void>(`/papers/${id}`, { method: 'DELETE' }),
   paperFileUrl: (id: string) => `${BASE}/papers/${id}/file`,
+  getOutline: (id: string) =>
+    request<{ items: { level: number; title: string; page: number }[] }>(`/papers/${id}/outline`),
+  searchPaper: (id: string, q: string) =>
+    request<{ items: { page: number; index: number; snippet: string }[]; total: number }>(`/papers/${id}/search?q=${encodeURIComponent(q)}`),
 
   listHighlights: (paperId: string) =>
     request<{ items: Highlight[] }>(`/papers/${paperId}/highlights`),
@@ -96,4 +100,6 @@ export const api = {
   getConfig: () => request<AppConfig>('/config'),
   saveConfig: (body: Partial<AppConfig> & { api_key?: string }) =>
     request<AppConfig>('/config', { method: 'POST', body: JSON.stringify(body) }),
+  testConfig: () =>
+    request<{ ok: boolean; message: string }>('/config/test', { method: 'POST' }),
 };

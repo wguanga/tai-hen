@@ -13,6 +13,8 @@ import { useKeyboard } from '../hooks/useKeyboard';
 import { streamSSE } from '../hooks/useStream';
 import { useToast } from './Toast';
 import { NoteInput } from './NoteInput';
+import { TocPanel } from './TocPanel';
+import { SearchBar } from './SearchBar';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.js',
@@ -30,11 +32,46 @@ export function PdfReader() {
   const [hlMenu, setHlMenu] = useState<{ x: number; y: number; highlight: Highlight } | null>(null);
   const [noteInput, setNoteInput] = useState<{ captured: CapturedSelection } | null>(null);
   const [hlFilter, setHlFilter] = useState<HighlightColor | null>(null);
+  const [showToc, setShowToc] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLElement>>(new Map());
 
   const paper = state.currentPaper;
   const pageWidth = Math.round(780 * zoom);
+
+  // Reading progress: save current page
+  useEffect(() => {
+    if (!paper || !currentPage) return;
+    const key = `reading_progress_${paper.id}`;
+    localStorage.setItem(key, String(currentPage));
+  }, [paper?.id, currentPage]);
+
+  // Reading progress: restore on paper open
+  useEffect(() => {
+    if (!paper) return;
+    const key = `reading_progress_${paper.id}`;
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      const page = Number(saved);
+      if (page > 1) {
+        // Delay to wait for pages to render
+        setTimeout(() => goToPage(page), 500);
+      }
+    }
+  }, [paper?.id]);
+
+  // Ctrl+F to open search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && paper) {
+        e.preventDefault();
+        setShowSearch(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [paper?.id]);
 
   // Keyboard shortcuts
   const kbActions = useMemo(() => ({
@@ -320,7 +357,12 @@ export function PdfReader() {
   return (
     <div className="flex flex-col h-full">
       {/* Page nav bar */}
-      <div className="flex items-center gap-2 px-3 py-1 border-b bg-white text-sm flex-shrink-0">
+      <div className="flex items-center gap-2 px-3 py-1 border-b bg-white dark:bg-gray-800 text-sm flex-shrink-0">
+        <button onClick={() => setShowToc((v) => !v)} title="目录"
+          className={'px-1 rounded text-xs ' + (showToc ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-gray-100 text-gray-500')}>☰</button>
+        <button onClick={() => setShowSearch((v) => !v)} title="搜索 (Ctrl+F)"
+          className={'px-1 rounded text-xs ' + (showSearch ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-gray-100 text-gray-500')}>🔍</button>
+        <div className="h-4 w-px bg-gray-200" />
         <button onClick={() => goToPage(Math.max(1, currentPage - 1))} disabled={currentPage <= 1}
           className="px-1 hover:bg-gray-100 rounded disabled:opacity-30">◀</button>
         <span className="text-gray-600">
@@ -367,8 +409,25 @@ export function PdfReader() {
         </>)}
       </div>
 
+      {/* Search bar */}
+      {showSearch && paper && (
+        <SearchBar
+          paperId={paper.id}
+          onGoToPage={goToPage}
+          onClose={() => setShowSearch(false)}
+        />
+      )}
+
+      {/* Main area: optional TOC sidebar + PDF */}
+      <div className="flex flex-1 min-h-0">
+        {showToc && paper && (
+          <div className="w-52 border-r bg-white dark:bg-gray-800 overflow-y-auto flex-shrink-0">
+            <TocPanel paperId={paper.id} currentPage={currentPage} onGoToPage={goToPage} />
+          </div>
+        )}
+
       {/* PDF area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-gray-100 py-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-gray-100 dark:bg-gray-900 py-4">
         <Document
           file={fileUrl}
           onLoadSuccess={(pdf) => setPageCount(pdf.numPages)}
@@ -407,6 +466,7 @@ export function PdfReader() {
           ))}
         </Document>
       </div>
+      </div>{/* close main area flex */}
 
       {/* Context menus */}
       {menu && (

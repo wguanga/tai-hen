@@ -10,6 +10,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   const [ollamaModel, setOllamaModel] = useState('qwen2.5:14b');
   const [apiKey, setApiKey] = useState('');
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -41,6 +43,19 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       alert('保存失败：' + (e as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function testConn() {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await api.testConfig();
+      setTestResult(res);
+    } catch (e) {
+      setTestResult({ ok: false, message: (e as Error).message });
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -122,20 +137,34 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           </>
         )}
 
-        <div className="flex justify-end gap-2 mt-4">
+        <div className="flex items-center justify-between mt-4">
           <button
-            onClick={onClose}
-            className="text-sm px-3 py-1 rounded border border-gray-300 hover:bg-gray-100"
+            onClick={testConn}
+            disabled={testing}
+            className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-50"
           >
-            取消
+            {testing ? '测试中…' : '🔌 测试连接'}
           </button>
-          <button
-            onClick={save}
-            disabled={saving}
-            className="text-sm px-3 py-1 rounded bg-indigo-500 text-white disabled:opacity-50"
-          >
-            {saving ? '保存中…' : '保存'}
-          </button>
+          {testResult && (
+            <span className={'text-xs ml-2 ' + (testResult.ok ? 'text-green-600' : 'text-red-500')}>
+              {testResult.message}
+            </span>
+          )}
+          <div className="flex gap-2 ml-auto">
+            <button
+              onClick={onClose}
+              className="text-sm px-3 py-1 rounded border border-gray-300 hover:bg-gray-100"
+            >
+              取消
+            </button>
+            <button
+              onClick={save}
+              disabled={saving}
+              className="text-sm px-3 py-1 rounded bg-indigo-500 text-white disabled:opacity-50"
+            >
+              {saving ? '保存中…' : '保存'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

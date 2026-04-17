@@ -10,9 +10,11 @@ interface ToolbarProps {
   onToggleLeft: () => void;
   rightCollapsed: boolean;
   onToggleRight: () => void;
+  dark: boolean;
+  onToggleDark: () => void;
 }
 
-export function Toolbar({ onOpenSettings, leftCollapsed, onToggleLeft, rightCollapsed, onToggleRight }: ToolbarProps) {
+export function Toolbar({ onOpenSettings, leftCollapsed, onToggleLeft, rightCollapsed, onToggleRight, dark, onToggleDark }: ToolbarProps) {
   const { state, dispatch } = useAppStore();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -91,9 +93,13 @@ export function Toolbar({ onOpenSettings, leftCollapsed, onToggleLeft, rightColl
         </div>
       )}
 
+      <button onClick={onToggleDark} title={dark ? '浅色模式' : '深色模式'}
+        className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">
+        {dark ? '☀️' : '🌙'}
+      </button>
       <button
         onClick={onOpenSettings}
-        className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100"
+        className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
       >
         ⚙️ 设置
       </button>

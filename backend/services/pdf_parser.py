@@ -84,6 +84,48 @@ def get_context_around(pdf_path: str, page_num: int, target_text: str, window: i
     return text[start:end]
 
 
+def get_outline(pdf_path: str) -> list[dict]:
+    """Extract PDF table of contents / bookmarks."""
+    doc = fitz.open(pdf_path)
+    try:
+        toc = doc.get_toc(simple=True)  # [[level, title, page], ...]
+        return [
+            {"level": item[0], "title": item[1].strip(), "page": item[2]}
+            for item in toc
+            if item[1].strip()
+        ]
+    finally:
+        doc.close()
+
+
+def search_text(pdf_path: str, query: str, max_results: int = 100) -> list[dict]:
+    """Search text across all pages, return matches with page + surrounding snippet."""
+    doc = fitz.open(pdf_path)
+    results: list[dict] = []
+    try:
+        q_lower = query.lower()
+        for i, page in enumerate(doc):
+            text = page.get_text()
+            start = 0
+            while True:
+                idx = text.lower().find(q_lower, start)
+                if idx == -1:
+                    break
+                snippet_start = max(0, idx - 40)
+                snippet_end = min(len(text), idx + len(query) + 40)
+                results.append({
+                    "page": i + 1,
+                    "index": idx,
+                    "snippet": text[snippet_start:snippet_end].replace("\n", " "),
+                })
+                start = idx + 1
+                if len(results) >= max_results:
+                    return results
+        return results
+    finally:
+        doc.close()
+
+
 def get_all_text(pdf_path: str, max_chars: int = 100_000) -> str:
     doc = fitz.open(pdf_path)
     try:

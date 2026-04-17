@@ -12,6 +12,15 @@ body {
     "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
+/* Dark mode base */
+.dark body { background: #1a1a2e; color: #e5e7eb; }
+.dark .bg-white { background: #1e1e30 !important; }
+.dark .border-b, .dark .border-t, .dark .border-l, .dark .border-r { border-color: #374151 !important; }
+.dark .border-gray-200, .dark .border-gray-300 { border-color: #4b5563 !important; }
+.dark input, .dark textarea, .dark select { background: #2a2a40; color: #e5e7eb; border-color: #4b5563; }
+.dark .ctx-menu { background: #1e1e30; border-color: #374151; }
+.dark .ctx-menu li:hover { background: #2a2a40; }
+
 .pdf-page {
   position: relative;
   margin: 0 auto 16px;

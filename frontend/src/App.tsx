@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from './api';
 import { AiPanel } from './components/AiPanel';
 import { NotesPanel } from './components/NotesPanel';
@@ -26,6 +26,21 @@ function Layout() {
   const [dragging, setDragging] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
+
+  const toggleDark = useCallback(() => {
+    setDark((d) => {
+      const next = !d;
+      localStorage.setItem('theme', next ? 'dark' : 'light');
+      document.documentElement.classList.toggle('dark', next);
+      return next;
+    });
+  }, []);
+
+  // Apply dark class on mount
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', dark);
+  }, []);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
@@ -62,6 +77,8 @@ function Layout() {
         onToggleLeft={() => setLeftCollapsed((v) => !v)}
         rightCollapsed={rightCollapsed}
         onToggleRight={() => setRightCollapsed((v) => !v)}
+        dark={dark}
+        onToggleDark={toggleDark}
       />
       <div className="flex flex-1 min-h-0">
         {!leftCollapsed && <PaperList />}

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { api } from '../api';
 import { useAppStore } from '../store/app-store';
@@ -30,12 +30,17 @@ export function NotesPanel() {
   const paper = state.currentPaper;
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
+  const [sortBy, setSortBy] = useState<'time' | 'page'>('time');
   const editRef = useRef<HTMLTextAreaElement>(null);
   const noteRefs = useRef<Map<string, HTMLElement>>(new Map());
 
-  const highlightColor = (highlightId?: string | null) => {
+  const getHighlight = (highlightId?: string | null) => {
     if (!highlightId) return undefined;
-    const h = state.highlights.find((x) => x.id === highlightId);
+    return state.highlights.find((x) => x.id === highlightId);
+  };
+
+  const highlightColor = (highlightId?: string | null) => {
+    const h = getHighlight(highlightId);
     return h ? COLOR_HEX[h.color] : undefined;
   };
 
@@ -108,16 +113,34 @@ export function NotesPanel() {
     return <div className="h-full flex items-center justify-center text-xs text-gray-400">暂无笔记</div>;
   }
 
+  const sortedNotes = useMemo(() => {
+    if (sortBy === 'page') {
+      return [...state.notes].sort((a, b) => {
+        const aPage = getHighlight(a.highlight_id)?.page ?? 9999;
+        const bPage = getHighlight(b.highlight_id)?.page ?? 9999;
+        return aPage - bPage;
+      });
+    }
+    return state.notes; // already newest-first from store
+  }, [state.notes, state.highlights, sortBy]);
+
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-3 py-2 border-b bg-white">
-        <div className="text-sm font-medium">笔记 ({state.notes.length})</div>
-        <button
-          onClick={exportMd}
-          className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100"
-        >
-          📤 导出 MD
-        </button>
+      <div className="flex items-center justify-between px-3 py-2 border-b bg-white dark:bg-gray-800">
+        <div className="text-sm font-medium dark:text-gray-200">笔记 ({state.notes.length})</div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setSortBy(sortBy === 'time' ? 'page' : 'time')}
+            className="text-xs px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
+            title={sortBy === 'time' ? '按时间排序' : '按页码排序'}>
+            {sortBy === 'time' ? '⏱ 时间' : '📄 页码'}
+          </button>
+          <button
+            onClick={exportMd}
+            className="text-xs px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            📤 导出
+          </button>
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
         {state.notes.length === 0 && (
@@ -126,16 +149,23 @@ export function NotesPanel() {
             快捷键：E 解释 · T 翻译 · N 笔记 · 1234 切色
           </div>
         )}
-        {state.notes.map((n) => {
-          const color = highlightColor(n.highlight_id);
+        {sortedNotes.map((n) => {
+          const hl = getHighlight(n.highlight_id);
+          const color = hl ? COLOR_HEX[hl.color] : undefined;
           const isEditing = editingId === n.id;
           return (
             <div
               key={n.id}
               ref={(el) => { if (el) noteRefs.current.set(n.id, el); }}
-              className="bg-white border border-gray-200 rounded p-2 transition-all"
+              className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-2 transition-all"
               style={color ? { borderLeft: `3px solid ${color}` } : undefined}
             >
+              {hl && (
+                <div className="text-xs text-gray-400 dark:text-gray-500 mb-1 line-clamp-2 italic border-l-2 border-gray-200 pl-2">
+                  "{hl.text.slice(0, 120)}{hl.text.length > 120 ? '…' : ''}"
+                  <span className="ml-1 not-italic text-gray-300">p.{hl.page}</span>
+                </div>
+              )}
               <div className="flex items-center justify-between mb-1">
                 <div className="text-xs text-gray-500">
                   <span className="font-medium text-gray-700">
