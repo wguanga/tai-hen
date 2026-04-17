@@ -22,6 +22,7 @@ export interface Paper {
   file_path: string;
   total_pages: number;
   file_size?: number | null;
+  tags: string[];
   created_at: string;
 }
 

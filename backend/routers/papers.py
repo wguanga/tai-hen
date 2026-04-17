@@ -9,7 +9,7 @@ from sqlmodel import Session
 from deps import get_session
 from errors import PaperNotFound
 from repositories.paper_repo import PaperRepo
-from schemas import PaperList, PaperRead
+from schemas import PaperList, PaperRead, PaperUpdate
 from services.paper_service import upload_paper
 
 router = APIRouter(tags=["papers"])
@@ -20,6 +20,10 @@ def _to_read(paper) -> PaperRead:
         authors = json.loads(paper.authors) if paper.authors else []
     except json.JSONDecodeError:
         authors = []
+    try:
+        tags = json.loads(getattr(paper, "tags", None) or "[]")
+    except json.JSONDecodeError:
+        tags = []
     return PaperRead(
         id=paper.id,
         title=paper.title,
@@ -28,6 +32,7 @@ def _to_read(paper) -> PaperRead:
         file_path=paper.file_path,
         total_pages=paper.total_pages,
         file_size=paper.file_size,
+        tags=tags,
         created_at=paper.created_at,
     )
 
@@ -43,10 +48,26 @@ def list_papers(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     q: str | None = Query(None),
+    tag: str | None = Query(None),
     session: Session = Depends(get_session),
 ):
-    items, total = PaperRepo(session).list(limit=limit, offset=offset, q=q)
+    items, total = PaperRepo(session).list(limit=limit, offset=offset, q=q, tag=tag)
     return PaperList(items=[_to_read(p) for p in items], total=total)
+
+
+@router.get("/tags")
+def list_tags(session: Session = Depends(get_session)):
+    return {"items": PaperRepo(session).all_tags()}
+
+
+@router.put("/{paper_id}", response_model=PaperRead)
+def update_paper(paper_id: str, body: PaperUpdate, session: Session = Depends(get_session)):
+    repo = PaperRepo(session)
+    if not repo.by_id(paper_id):
+        raise PaperNotFound(detail={"paper_id": paper_id})
+    patch = body.model_dump(exclude_unset=True)
+    updated = repo.update(paper_id, patch)
+    return _to_read(updated)
 
 
 @router.get("/{paper_id}", response_model=PaperRead)

@@ -10,6 +10,7 @@ import type { Highlight, HighlightColor } from '../types';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { useHighlight, type CapturedSelection } from '../hooks/useHighlight';
 import { useKeyboard } from '../hooks/useKeyboard';
+import { usePageVirtualization } from '../hooks/usePageVirtualization';
 import { streamSSE } from '../hooks/useStream';
 import { useToast } from './Toast';
 import { NoteInput } from './NoteInput';
@@ -39,6 +40,7 @@ export function PdfReader() {
 
   const paper = state.currentPaper;
   const pageWidth = Math.round(780 * zoom);
+  const { renderedPages, registerPage, setPageHeight, heightFor } = usePageVirtualization(pageCount, scrollRef);
 
   // Reading progress: save current page
   useEffect(() => {
@@ -434,36 +436,58 @@ export function PdfReader() {
           loading={<div className="text-center text-gray-500 pt-10">加载 PDF…</div>}
           error={<div className="text-center text-red-500 pt-10">PDF 加载失败</div>}
         >
-          {Array.from({ length: pageCount }, (_, i) => i + 1).map((pageNum) => (
-            <div
-              key={pageNum}
-              className="pdf-page"
-              data-page-number={pageNum}
-              style={{ width: pageWidth }}
-              ref={(el) => { if (el) pageRefs.current.set(pageNum, el); }}
-            >
-              <Page pageNumber={pageNum} width={pageWidth} />
-              {(highlightsByPage.get(pageNum) ?? []).map((h) =>
-                h.position.rects.map((r, idx) => (
-                  <div
-                    key={`${h.id}-${idx}`}
-                    className="highlight-rect"
-                    data-hl={h.id}
-                    style={{
-                      left: r.x * zoom,
-                      top: r.y * zoom,
-                      width: r.width * zoom,
-                      height: r.height * zoom,
-                      background: COLOR_HEX[h.color],
-                      opacity: 0.4,
-                      cursor: 'pointer',
-                      pointerEvents: 'auto',
+          {Array.from({ length: pageCount }, (_, i) => i + 1).map((pageNum) => {
+            const shouldRender = renderedPages.has(pageNum);
+            return (
+              <div
+                key={pageNum}
+                className="pdf-page"
+                data-page-number={pageNum}
+                style={{ width: pageWidth, minHeight: heightFor(pageNum) }}
+                ref={(el) => {
+                  if (el) pageRefs.current.set(pageNum, el);
+                  registerPage(pageNum, el);
+                }}
+              >
+                {shouldRender ? (
+                  <Page
+                    pageNumber={pageNum}
+                    width={pageWidth}
+                    onRenderSuccess={(p: any) => {
+                      const h = (p as any)?.height ?? 0;
+                      if (h > 0) setPageHeight(pageNum, h);
                     }}
                   />
-                )),
-              )}
-            </div>
-          ))}
+                ) : (
+                  <div
+                    className="flex items-center justify-center text-xs text-gray-300 dark:text-gray-600"
+                    style={{ height: heightFor(pageNum) }}
+                  >
+                    第 {pageNum} 页
+                  </div>
+                )}
+                {shouldRender && (highlightsByPage.get(pageNum) ?? []).map((h) =>
+                  h.position.rects.map((r, idx) => (
+                    <div
+                      key={`${h.id}-${idx}`}
+                      className="highlight-rect"
+                      data-hl={h.id}
+                      style={{
+                        left: r.x * zoom,
+                        top: r.y * zoom,
+                        width: r.width * zoom,
+                        height: r.height * zoom,
+                        background: COLOR_HEX[h.color],
+                        opacity: 0.4,
+                        cursor: 'pointer',
+                        pointerEvents: 'auto',
+                      }}
+                    />
+                  )),
+                )}
+              </div>
+            );
+          })}
         </Document>
       </div>
       </div>{/* close main area flex */}

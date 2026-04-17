@@ -4,6 +4,7 @@ import { AiPanel } from './components/AiPanel';
 import { NotesPanel } from './components/NotesPanel';
 import { PaperList } from './components/PaperList';
 import { PdfReader } from './components/PdfReader';
+import { GlobalSearch } from './components/GlobalSearch';
 import { SettingsModal } from './components/SettingsModal';
 import { Toolbar } from './components/Toolbar';
 import { ToastProvider, useToast } from './components/Toast';
@@ -23,6 +24,7 @@ function Layout() {
   const { dispatch } = useAppStore();
   const { toast } = useToast();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -40,6 +42,18 @@ function Layout() {
   // Apply dark class on mount
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
+  }, []);
+
+  // Ctrl+Shift+F → global notes search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
+        e.preventDefault();
+        setGlobalSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, []);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
@@ -73,6 +87,7 @@ function Layout() {
     >
       <Toolbar
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
         leftCollapsed={leftCollapsed}
         onToggleLeft={() => setLeftCollapsed((v) => !v)}
         rightCollapsed={rightCollapsed}
@@ -98,6 +113,7 @@ function Layout() {
       </div>
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {globalSearchOpen && <GlobalSearch onClose={() => setGlobalSearchOpen(false)} />}
 
       {/* Drag overlay */}
       {dragging && (

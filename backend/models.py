@@ -23,6 +23,7 @@ class Paper(SQLModel, table=True):
     total_pages: int
     file_size: Optional[int] = None
     file_hash: Optional[str] = Field(default=None, index=True)
+    tags: str = "[]"  # JSON array of strings
     created_at: str = Field(default_factory=utcnow)
 
 

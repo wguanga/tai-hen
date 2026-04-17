@@ -48,6 +48,11 @@ export const api = {
   },
   deletePaper: (id: string) =>
     request<void>(`/papers/${id}`, { method: 'DELETE' }),
+  updatePaper: (id: string, patch: { tags?: string[]; title?: string }) =>
+    request<Paper>(`/papers/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+  listAllTags: () => request<{ items: string[] }>('/papers/tags'),
+  listPapersByTag: (tag: string) =>
+    request<{ items: Paper[]; total: number }>(`/papers?tag=${encodeURIComponent(tag)}`),
   paperFileUrl: (id: string) => `${BASE}/papers/${id}/file`,
   getOutline: (id: string) =>
     request<{ items: { level: number; title: string; page: number }[] }>(`/papers/${id}/outline`),
@@ -96,6 +101,17 @@ export const api = {
     request<void>(`/papers/${paperId}/notes/${nid}`, { method: 'DELETE' }),
   exportMarkdown: (paperId: string) =>
     request<string>(`/papers/${paperId}/export`),
+
+  searchNotesGlobal: (q: string) =>
+    request<{
+      items: Array<{
+        id: string; paper_id: string; paper_title: string;
+        highlight_id: string | null; title: string | null;
+        content: string; source: 'manual' | 'ai_answer' | 'ai_summary';
+        created_at: string;
+      }>;
+      total: number;
+    }>(`/search/notes?q=${encodeURIComponent(q)}`),
 
   getConfig: () => request<AppConfig>('/config'),
   saveConfig: (body: Partial<AppConfig> & { api_key?: string }) =>

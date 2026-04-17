@@ -55,12 +55,13 @@ async def unhandled_error_handler(_req: Request, exc: Exception):
     )
 
 
-from routers import papers, highlights, notes, ai, config as config_router
+from routers import papers, highlights, notes, ai, search, config as config_router
 
 app.include_router(papers.router, prefix="/papers")
 app.include_router(highlights.router, prefix="/papers")
 app.include_router(notes.router, prefix="/papers")
 app.include_router(ai.router, prefix="/ai")
+app.include_router(search.router, prefix="/search")
 app.include_router(config_router.router, prefix="/config")
 
 

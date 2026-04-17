@@ -16,12 +16,18 @@ class PaperRead(BaseModel):
     file_path: str
     total_pages: int
     file_size: Optional[int] = None
+    tags: list[str] = []
     created_at: str
 
 
 class PaperList(BaseModel):
     items: list[PaperRead]
     total: int
+
+
+class PaperUpdate(BaseModel):
+    tags: Optional[list[str]] = None
+    title: Optional[str] = None
 
 
 class HighlightRectIn(BaseModel):

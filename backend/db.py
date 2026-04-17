@@ -31,18 +31,32 @@ def _set_pragmas(dbapi_conn, _):
 
 MIGRATIONS: dict[int, list[str]] = {
     # 1 → already created by SQLModel.metadata.create_all
+    2: [
+        "ALTER TABLE papers ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'",
+    ],
 }
+
+
+CURRENT_SCHEMA_VERSION = max([1] + list(MIGRATIONS.keys()))
 
 
 def init_db() -> None:
     import models  # noqa: F401 ensure tables registered
+    # Detect whether DB file already has tables (pre-existing) BEFORE create_all.
+    from sqlalchemy import inspect
+    inspector = inspect(engine)
+    had_tables = "papers" in inspector.get_table_names()
+
     SQLModel.metadata.create_all(engine)
     with engine.begin() as conn:
         conn.exec_driver_sql(
             "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)"
         )
+        # Fresh DB → mark at latest version (create_all already made full schema).
+        # Existing DB → keep whatever version it's at, migrations will run.
+        initial_version = "1" if had_tables else str(CURRENT_SCHEMA_VERSION)
         conn.exec_driver_sql(
-            "INSERT OR IGNORE INTO app_meta(key, value) VALUES ('schema_version', '1')"
+            f"INSERT OR IGNORE INTO app_meta(key, value) VALUES ('schema_version', '{initial_version}')"
         )
         row = conn.exec_driver_sql(
             "SELECT value FROM app_meta WHERE key='schema_version'"

@@ -38,6 +38,7 @@ def _reload_backend_modules():
         "routers.highlights",
         "routers.notes",
         "routers.ai",
+        "routers.search",
         "routers.config",
         "deps",
     ):

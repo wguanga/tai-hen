@@ -38,6 +38,18 @@ class NoteRepo:
         self.s.commit()
         return True
 
+    def search_global(self, query: str, limit: int = 50) -> list[Note]:
+        """Search note title + content across all papers."""
+        stmt = (
+            select(Note)
+            .where(
+                (Note.title.ilike(f"%{query}%")) | (Note.content.ilike(f"%{query}%"))
+            )
+            .order_by(Note.created_at.desc())
+            .limit(limit)
+        )
+        return list(self.s.exec(stmt).all())
+
     def list_for_paper(
         self, paper_id: str, highlight_id: str | None = None, source: str | None = None
     ) -> list[Note]:
