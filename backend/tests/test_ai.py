@@ -68,6 +68,23 @@ class TestSummarize:
         assert len(chunk_text) > 0
 
 
+class TestExplainSection:
+    def test_explain_section_streams(self, client, uploaded_paper, mock_llm):
+        pid = uploaded_paper["id"]
+        r = client.post("/ai/explain_section", json={
+            "paper_id": pid, "title": "Method", "start_page": 2, "end_page": 3,
+        })
+        assert r.status_code == 200
+        events = _parse_sse(r.text)
+        assert any(e["type"] == "done" for e in events)
+
+    def test_missing_paper_404(self, client, mock_llm):
+        r = client.post("/ai/explain_section", json={
+            "paper_id": "nope", "title": "X", "start_page": 1,
+        })
+        assert r.status_code == 404
+
+
 class TestChat:
     def test_chat_streams_and_persists(self, client, uploaded_paper, mock_llm):
         pid = uploaded_paper["id"]
@@ -78,3 +95,81 @@ class TestChat:
         assert r.status_code == 200
         events = _parse_sse(r.text)
         assert any(e["type"] == "done" for e in events)
+
+
+class TestChatContextInjection:
+    """Verify chat includes user's highlights/notes as system prompt context."""
+
+    def test_build_context_empty_paper(self, client, uploaded_paper):
+        """With no highlights/notes, context is empty string."""
+        from routers.ai import _build_chat_context
+        from db import engine
+        from sqlmodel import Session
+        with Session(engine) as s:
+            ctx = _build_chat_context(s, uploaded_paper["id"])
+        assert ctx == ""
+
+    def test_build_context_includes_highlights(self, client, uploaded_paper):
+        from routers.ai import _build_chat_context
+        from db import engine
+        from sqlmodel import Session
+
+        pid = uploaded_paper["id"]
+        client.post(f"/papers/{pid}/highlights", json={
+            "text": "attention mechanism", "color": "yellow", "page": 2,
+            "position": {"x": 0, "y": 0, "width": 10, "height": 10,
+                         "rects": [{"x": 0, "y": 0, "width": 10, "height": 10}]},
+        })
+        with Session(engine) as s:
+            ctx = _build_chat_context(s, pid)
+        assert "attention mechanism" in ctx
+        assert "p.2" in ctx
+        assert "重要概念" in ctx  # yellow label
+
+    def test_build_context_includes_notes(self, client, uploaded_paper):
+        from routers.ai import _build_chat_context
+        from db import engine
+        from sqlmodel import Session
+
+        pid = uploaded_paper["id"]
+        client.post(f"/papers/{pid}/notes", json={
+            "content": "my own observation about the paper",
+            "source": "manual",
+        })
+        with Session(engine) as s:
+            ctx = _build_chat_context(s, pid)
+        assert "my own observation" in ctx
+        assert "手动笔记" in ctx
+
+    def test_build_context_includes_summary(self, client, uploaded_paper):
+        from routers.ai import _build_chat_context
+        from db import engine
+        from sqlmodel import Session
+
+        pid = uploaded_paper["id"]
+        client.post(f"/papers/{pid}/notes", json={
+            "title": "整篇摘要",
+            "content": "## 核心贡献\nA new framework.",
+            "source": "ai_summary",
+        })
+        with Session(engine) as s:
+            ctx = _build_chat_context(s, pid)
+        assert "AI 摘要" in ctx
+        assert "new framework" in ctx
+
+    def test_build_context_truncates_long_text(self, client, uploaded_paper):
+        from routers.ai import _build_chat_context
+        from db import engine
+        from sqlmodel import Session
+
+        pid = uploaded_paper["id"]
+        long = "x" * 500
+        client.post(f"/papers/{pid}/highlights", json={
+            "text": long, "color": "yellow", "page": 1,
+            "position": {"x": 0, "y": 0, "width": 10, "height": 10,
+                         "rects": [{"x": 0, "y": 0, "width": 10, "height": 10}]},
+        })
+        with Session(engine) as s:
+            ctx = _build_chat_context(s, pid)
+        assert "…" in ctx  # ellipsis marker
+        assert len(ctx) < 400  # truncated to ~160 chars per highlight

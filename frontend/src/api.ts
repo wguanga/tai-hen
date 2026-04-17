@@ -56,6 +56,13 @@ export const api = {
   paperFileUrl: (id: string) => `${BASE}/papers/${id}/file`,
   getOutline: (id: string) =>
     request<{ items: { level: number; title: string; page: number }[] }>(`/papers/${id}/outline`),
+  getSummary: (id: string) =>
+    request<{ summary: { id: string; content: string; created_at: string; updated_at: string } | null }>(`/papers/${id}/summary`),
+  generateSummary: (id: string, regenerate = false) =>
+    request<{
+      summary: { id: string; content: string; created_at: string; updated_at: string } | null;
+      cached: boolean;
+    }>(`/papers/${id}/summary?regenerate=${regenerate}`, { method: 'POST' }),
   searchPaper: (id: string, q: string) =>
     request<{ items: { page: number; index: number; snippet: string }[]; total: number }>(`/papers/${id}/search?q=${encodeURIComponent(q)}`),
 

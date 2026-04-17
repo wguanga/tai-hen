@@ -93,6 +93,89 @@ def get_paper_file(paper_id: str, session: Session = Depends(get_session)):
     )
 
 
+@router.get("/{paper_id}/summary")
+def get_summary(paper_id: str, session: Session = Depends(get_session)):
+    """Return existing ai_summary note or null."""
+    paper = PaperRepo(session).by_id(paper_id)
+    if not paper:
+        raise PaperNotFound(detail={"paper_id": paper_id})
+    from repositories.note_repo import NoteRepo
+    notes = NoteRepo(session).list_for_paper(paper_id, source="ai_summary")
+    if not notes:
+        return {"summary": None}
+    # Most recent summary
+    latest = notes[0]
+    return {
+        "summary": {
+            "id": latest.id,
+            "content": latest.content,
+            "created_at": latest.created_at,
+            "updated_at": latest.updated_at,
+        }
+    }
+
+
+@router.post("/{paper_id}/summary")
+async def generate_summary(paper_id: str, regenerate: bool = Query(False), session: Session = Depends(get_session)):
+    """Generate a fresh summary (non-streaming). Returns markdown + persisted note.
+
+    If a summary exists and regenerate=false, returns the existing one.
+    """
+    paper = PaperRepo(session).by_id(paper_id)
+    if not paper:
+        raise PaperNotFound(detail={"paper_id": paper_id})
+
+    from repositories.note_repo import NoteRepo
+    note_repo = NoteRepo(session)
+    existing = note_repo.list_for_paper(paper_id, source="ai_summary")
+
+    if existing and not regenerate:
+        n = existing[0]
+        return {
+            "summary": {
+                "id": n.id,
+                "content": n.content,
+                "created_at": n.created_at,
+                "updated_at": n.updated_at,
+            },
+            "cached": True,
+        }
+
+    from services.llm_service import SYSTEM_PROMPTS, stream_llm
+    from services.pdf_parser import get_all_text
+
+    abs_path = Path("data") / paper.file_path
+    full_text = get_all_text(str(abs_path), max_chars=60_000)
+    messages = [{"role": "user", "content": f"# 论文全文（可能截断）\n\n{full_text}"}]
+
+    buf: list[str] = []
+    async for chunk in stream_llm(messages, SYSTEM_PROMPTS["summarize"]):
+        buf.append(chunk)
+    content = "".join(buf).strip()
+
+    if not content:
+        return {"summary": None, "cached": False}
+
+    # Replace existing (delete old summaries) then create a new one
+    for old in existing:
+        note_repo.delete(old.id)
+    note = note_repo.create({
+        "paper_id": paper_id,
+        "title": "整篇摘要",
+        "content": content,
+        "source": "ai_summary",
+    })
+    return {
+        "summary": {
+            "id": note.id,
+            "content": note.content,
+            "created_at": note.created_at,
+            "updated_at": note.updated_at,
+        },
+        "cached": False,
+    }
+
+
 @router.get("/{paper_id}/outline")
 def get_outline(paper_id: str, session: Session = Depends(get_session)):
     paper = PaperRepo(session).by_id(paper_id)

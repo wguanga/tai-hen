@@ -6,6 +6,7 @@ import { PaperList } from './components/PaperList';
 import { PdfReader } from './components/PdfReader';
 import { GlobalSearch } from './components/GlobalSearch';
 import { SettingsModal } from './components/SettingsModal';
+import { SummaryPanel } from './components/SummaryPanel';
 import { Toolbar } from './components/Toolbar';
 import { ToastProvider, useToast } from './components/Toast';
 import { AppStoreProvider, useAppStore } from './store/app-store';
@@ -28,6 +29,7 @@ function Layout() {
   const [dragging, setDragging] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
 
   const toggleDark = useCallback(() => {
@@ -44,17 +46,24 @@ function Layout() {
     document.documentElement.classList.toggle('dark', dark);
   }, []);
 
-  // Ctrl+Shift+F → global notes search
+  // Ctrl+Shift+F → global notes search; F11 → focus mode
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
         e.preventDefault();
         setGlobalSearchOpen(true);
       }
+      if (e.key === 'F11') {
+        e.preventDefault();
+        setFocusMode((v) => !v);
+      }
+      if (e.key === 'Escape' && focusMode) {
+        setFocusMode(false);
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [focusMode]);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
@@ -85,35 +94,41 @@ function Layout() {
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={handleDrop}
     >
-      <Toolbar
-        onOpenSettings={() => setSettingsOpen(true)}
-        onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
-        leftCollapsed={leftCollapsed}
-        onToggleLeft={() => setLeftCollapsed((v) => !v)}
-        rightCollapsed={rightCollapsed}
-        onToggleRight={() => setRightCollapsed((v) => !v)}
-        dark={dark}
-        onToggleDark={toggleDark}
-      />
+      {!focusMode && (
+        <Toolbar
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
+          leftCollapsed={leftCollapsed}
+          onToggleLeft={() => setLeftCollapsed((v) => !v)}
+          rightCollapsed={rightCollapsed}
+          onToggleRight={() => setRightCollapsed((v) => !v)}
+          dark={dark}
+          onToggleDark={toggleDark}
+          focusMode={focusMode}
+          onToggleFocus={() => setFocusMode((v) => !v)}
+        />
+      )}
       <div className="flex flex-1 min-h-0">
-        {!leftCollapsed && <PaperList />}
+        {!focusMode && !leftCollapsed && <PaperList />}
         <div className="flex-1 min-w-0">
           <PdfReader />
         </div>
-        {!rightCollapsed && (
-          <div className="w-96 border-l flex flex-col flex-shrink-0">
-            <div className="flex-1 min-h-0">
-              <AiPanel />
-            </div>
-            <div className="h-56 border-t flex-shrink-0">
-              <NotesPanel />
-            </div>
-          </div>
-        )}
+        {!focusMode && !rightCollapsed && <RightPanel />}
       </div>
+      {focusMode && (
+        <button
+          onClick={() => setFocusMode(false)}
+          className="fixed top-2 right-2 text-xs px-2 py-1 rounded bg-gray-900/70 text-white hover:bg-gray-900 z-40"
+          title="退出专注模式 (Esc / F11)"
+        >
+          退出专注
+        </button>
+      )}
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
       {globalSearchOpen && <GlobalSearch onClose={() => setGlobalSearchOpen(false)} />}
+
+      {/* close Layout root below */}
 
       {/* Drag overlay */}
       {dragging && (
@@ -124,6 +139,46 @@ function Layout() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+type RightTab = 'summary' | 'ai';
+
+function RightPanel() {
+  const [tab, setTab] = useState<RightTab>('summary');
+  return (
+    <div className="w-96 border-l flex flex-col flex-shrink-0">
+      <div className="flex border-b bg-white dark:bg-gray-800 flex-shrink-0">
+        <button
+          onClick={() => setTab('summary')}
+          className={
+            'flex-1 text-sm py-1.5 ' +
+            (tab === 'summary'
+              ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium border-b-2 border-indigo-500'
+              : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700')
+          }
+        >
+          📑 摘要
+        </button>
+        <button
+          onClick={() => setTab('ai')}
+          className={
+            'flex-1 text-sm py-1.5 ' +
+            (tab === 'ai'
+              ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-medium border-b-2 border-indigo-500'
+              : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700')
+          }
+        >
+          🤖 AI 对话
+        </button>
+      </div>
+      <div className="flex-1 min-h-0">
+        {tab === 'summary' ? <SummaryPanel /> : <AiPanel />}
+      </div>
+      <div className="h-56 border-t flex-shrink-0">
+        <NotesPanel />
+      </div>
     </div>
   );
 }

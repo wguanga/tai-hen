@@ -11,9 +11,9 @@ from deps import get_session
 from errors import AppError, PaperNotFound
 from repositories.chat_repo import ChatRepo
 from repositories.paper_repo import PaperRepo
-from schemas import ChatRequest, ExplainRequest, SummarizeRequest, TranslateRequest
+from schemas import ChatRequest, ExplainRequest, ExplainSectionRequest, SummarizeRequest, TranslateRequest
 from services.llm_service import SYSTEM_PROMPTS, stream_llm
-from services.pdf_parser import get_all_text, get_context_around
+from services.pdf_parser import get_all_text, get_context_around, get_section_text
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ai"])
@@ -124,6 +124,78 @@ async def summarize(req: Request, body: SummarizeRequest, session: Session = Dep
     return _sse_response(_sse_stream(req, stream_llm(messages, SYSTEM_PROMPTS["summarize"])))
 
 
+@router.post("/explain_section")
+async def explain_section(req: Request, body: ExplainSectionRequest, session: Session = Depends(get_session)):
+    paper = PaperRepo(session).by_id(body.paper_id)
+    if not paper:
+        raise PaperNotFound(detail={"paper_id": body.paper_id})
+    abs_path = Path("data") / paper.file_path
+    section_text = get_section_text(str(abs_path), body.start_page, body.end_page, max_chars=30_000)
+    if not section_text.strip():
+        section_text = "(此章节无可提取文本)"
+    user_content = (
+        f"# 章节：{body.title}\n"
+        f"（第 {body.start_page} 页起{'，至第 ' + str(body.end_page - 1) + ' 页' if body.end_page else '至文末'}）\n\n"
+        f"{section_text}\n\n"
+        "# 任务\n"
+        "请针对上述章节生成要点笔记：\n"
+        "1. 本节核心论点（1-2 句）\n"
+        "2. 关键方法 / 公式 / 数据（3-5 条）\n"
+        "3. 与相邻章节的衔接（本节回答了什么，引出了什么）\n"
+    )
+    messages = [{"role": "user", "content": user_content}]
+    # Reuse summarize system prompt style but section-scoped
+    system = (
+        "你是学术论文阅读助手。阅读用户提供的单个章节，生成简洁结构化的要点。"
+        "中文回答，保留关键英文术语。基于文本，不编造。总长不超过 600 字。"
+    )
+    return _sse_response(_sse_stream(req, stream_llm(messages, system)))
+
+
+def _build_chat_context(session, paper_id: str, max_highlights: int = 15, max_notes: int = 10) -> str:
+    """Assemble user's reading context (highlights + recent notes + summary) for chat prompt."""
+    import json
+    from repositories.highlight_repo import HighlightRepo
+    from repositories.note_repo import NoteRepo
+
+    parts: list[str] = []
+
+    # Summary note (AI-generated structured summary) — highest signal
+    notes = NoteRepo(session).list_for_paper(paper_id, source="ai_summary")
+    if notes:
+        parts.append("## 本论文的 AI 摘要\n" + notes[0].content.strip())
+
+    # Highlights, grouped by color
+    hls = HighlightRepo(session).list_for_paper(paper_id)
+    if hls:
+        color_label = {"yellow": "重要概念", "blue": "方法细节", "green": "实验结论", "purple": "不理解"}
+        by_color: dict[str, list] = {}
+        for h in hls[:max_highlights]:
+            by_color.setdefault(h.color, []).append(h)
+        hl_lines = ["## 用户的高亮（反映其关注点）"]
+        for color, items in by_color.items():
+            hl_lines.append(f"\n### {color_label.get(color, color)}（{color}）")
+            for h in items:
+                snippet = (h.text or "").strip().replace("\n", " ")
+                if len(snippet) > 160:
+                    snippet = snippet[:160] + "…"
+                hl_lines.append(f"- [p.{h.page}] {snippet}")
+        parts.append("\n".join(hl_lines))
+
+    # Manual notes (user's own thoughts)
+    manual_notes = NoteRepo(session).list_for_paper(paper_id, source="manual")
+    if manual_notes:
+        lines = ["## 用户的手动笔记"]
+        for n in manual_notes[:max_notes]:
+            content = n.content.strip().replace("\n", " ")
+            if len(content) > 200:
+                content = content[:200] + "…"
+            lines.append(f"- {content}")
+        parts.append("\n".join(lines))
+
+    return "\n\n".join(parts)
+
+
 @router.post("/chat")
 async def chat(req: Request, body: ChatRequest, session: Session = Depends(get_session)):
     if not PaperRepo(session).by_id(body.paper_id):
@@ -142,6 +214,16 @@ async def chat(req: Request, body: ChatRequest, session: Session = Depends(get_s
                 }
             )
 
+    # Build enriched system prompt with user's reading context
+    context_md = _build_chat_context(session, body.paper_id)
+    system_prompt = SYSTEM_PROMPTS["chat"]
+    if context_md:
+        system_prompt = (
+            system_prompt
+            + "\n\n---\n以下是用户在本论文上已有的阅读状态。参考这些信息回答，不要重复讲解他已经标记过的内容：\n\n"
+            + context_md
+        )
+
     def on_done(full: str):
         if full.strip():
             ChatRepo(session).create(
@@ -153,4 +235,4 @@ async def chat(req: Request, body: ChatRequest, session: Session = Depends(get_s
                 }
             )
 
-    return _sse_response(_sse_stream(req, stream_llm(messages, SYSTEM_PROMPTS["chat"]), on_done))
+    return _sse_response(_sse_stream(req, stream_llm(messages, system_prompt), on_done))

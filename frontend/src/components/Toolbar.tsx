@@ -13,9 +13,11 @@ interface ToolbarProps {
   onToggleRight: () => void;
   dark: boolean;
   onToggleDark: () => void;
+  focusMode: boolean;
+  onToggleFocus: () => void;
 }
 
-export function Toolbar({ onOpenSettings, onOpenGlobalSearch, leftCollapsed, onToggleLeft, rightCollapsed, onToggleRight, dark, onToggleDark }: ToolbarProps) {
+export function Toolbar({ onOpenSettings, onOpenGlobalSearch, leftCollapsed, onToggleLeft, rightCollapsed, onToggleRight, dark, onToggleDark, focusMode, onToggleFocus }: ToolbarProps) {
   const { state, dispatch } = useAppStore();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -89,11 +91,20 @@ export function Toolbar({ onOpenSettings, onOpenGlobalSearch, leftCollapsed, onT
       <div className="flex-1" />
 
       {paper && (
-        <div className="text-xs text-gray-500 truncate max-w-md">
-          {paper.title} · {paper.total_pages} 页
+        <div className="text-xs text-gray-500 truncate max-w-md flex items-center gap-2">
+          <span className="truncate" title={paper.title}>{paper.title}</span>
+          <span className="text-gray-400 flex items-center gap-2 whitespace-nowrap">
+            <span>📄 {paper.total_pages}</span>
+            <span>🎨 {state.highlights.length}</span>
+            <span>📝 {state.notes.length}</span>
+          </span>
         </div>
       )}
 
+      <button onClick={onToggleFocus} title="专注模式 (F11)"
+        className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">
+        {focusMode ? '🪟' : '🎯'}
+      </button>
       <button onClick={onOpenGlobalSearch} title="跨论文笔记搜索 (Ctrl+Shift+F)"
         className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">
         🔎 搜笔记

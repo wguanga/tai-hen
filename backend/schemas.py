@@ -123,6 +123,13 @@ class SummarizeRequest(BaseModel):
     paper_id: str
 
 
+class ExplainSectionRequest(BaseModel):
+    paper_id: str
+    title: str
+    start_page: int
+    end_page: Optional[int] = None
+
+
 class ChatRequest(BaseModel):
     paper_id: str
     highlight_id: Optional[str] = None

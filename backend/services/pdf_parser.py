@@ -98,6 +98,33 @@ def get_outline(pdf_path: str) -> list[dict]:
         doc.close()
 
 
+def get_section_text(pdf_path: str, start_page: int, end_page: int | None = None, max_chars: int = 30_000) -> str:
+    """Return concatenated text between start_page (inclusive) and end_page (exclusive).
+
+    If end_page is None, read until the end of the document.
+    """
+    doc = fitz.open(pdf_path)
+    try:
+        total = len(doc)
+        start = max(1, start_page)
+        end = total if end_page is None else min(total, end_page - 1)
+        if start > total:
+            return ""
+        parts: list[str] = []
+        used = 0
+        for i in range(start - 1, end):
+            t = doc[i].get_text()
+            if used + len(t) > max_chars:
+                parts.append(t[: max_chars - used])
+                parts.append("\n[truncated]")
+                break
+            parts.append(t)
+            used += len(t)
+        return "\n".join(parts)
+    finally:
+        doc.close()
+
+
 def search_text(pdf_path: str, query: str, max_results: int = 100) -> list[dict]:
     """Search text across all pages, return matches with page + surrounding snippet."""
     doc = fitz.open(pdf_path)

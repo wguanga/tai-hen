@@ -16,6 +16,7 @@ import { useToast } from './Toast';
 import { NoteInput } from './NoteInput';
 import { TocPanel } from './TocPanel';
 import { SearchBar } from './SearchBar';
+import { HighlightMinimap } from './HighlightMinimap';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.js',
@@ -350,6 +351,17 @@ export function PdfReader() {
         onClick: () => (window as any).__scrollToNote?.(hl.id),
       }] : []),
       {
+        label: '📋 复制原文',
+        onClick: async () => {
+          try {
+            await navigator.clipboard.writeText(hl.text);
+            toast('已复制到剪贴板', 'success');
+          } catch {
+            toast('复制失败', 'error');
+          }
+        },
+      },
+      {
         label: '🗑️ 删除高亮',
         onClick: () => handleDeleteHighlight(hl),
       },
@@ -490,6 +502,15 @@ export function PdfReader() {
           })}
         </Document>
       </div>
+      {/* Highlight minimap */}
+      {pageCount > 1 && state.highlights.length > 0 && (
+        <HighlightMinimap
+          highlights={state.highlights}
+          pageCount={pageCount}
+          currentPage={currentPage}
+          onGoToPage={goToPage}
+        />
+      )}
       </div>{/* close main area flex */}
 
       {/* Context menus */}

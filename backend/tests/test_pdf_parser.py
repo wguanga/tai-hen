@@ -5,6 +5,7 @@ from services.pdf_parser import (
     get_context_around,
     get_outline,
     get_page_text,
+    get_section_text,
     search_text,
 )
 
@@ -111,6 +112,32 @@ class TestGetOutline:
         path.write_bytes(doc.tobytes())
         doc.close()
         assert get_outline(str(path)) == []
+
+
+class TestSectionText:
+    def test_single_page(self, sample_pdf_path):
+        text = get_section_text(sample_pdf_path, 2, 3)  # just page 2
+        assert "Method" in text
+        assert "Results" not in text
+
+    def test_page_range(self, sample_pdf_path):
+        text = get_section_text(sample_pdf_path, 1, 3)  # pages 1-2
+        assert "Introduction" in text
+        assert "Method" in text
+        assert "Results" not in text
+
+    def test_to_end(self, sample_pdf_path):
+        text = get_section_text(sample_pdf_path, 2, None)
+        assert "Method" in text
+        assert "Results" in text
+
+    def test_out_of_range_returns_empty(self, sample_pdf_path):
+        text = get_section_text(sample_pdf_path, 99)
+        assert text == ""
+
+    def test_truncates_at_max_chars(self, sample_pdf_path):
+        text = get_section_text(sample_pdf_path, 1, None, max_chars=15)
+        assert "[truncated]" in text
 
 
 class TestSearchText:

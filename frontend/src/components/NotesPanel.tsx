@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
 import { api } from '../api';
+import { Markdown } from './Markdown';
 import { useAppStore } from '../store/app-store';
 import { useToast } from './Toast';
 import { COLOR_HEX } from '../types';
@@ -213,7 +213,7 @@ export function NotesPanel() {
                 </div>
               ) : (
                 <div className="markdown-body text-sm text-gray-800">
-                  <ReactMarkdown>{n.content}</ReactMarkdown>
+                  <Markdown>{n.content}</Markdown>
                 </div>
               )}
             </div>

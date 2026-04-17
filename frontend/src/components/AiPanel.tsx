@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { Markdown } from './Markdown';
 import { api } from '../api';
 import { streamSSE } from '../hooks/useStream';
 import { useAppStore } from '../store/app-store';
@@ -186,7 +186,7 @@ function Bubble({
           <span className="text-sm whitespace-pre-wrap">{content}</span>
         ) : (
           <div className="markdown-body">
-            <ReactMarkdown>{content}</ReactMarkdown>
+            <Markdown>{content}</Markdown>
             {streaming && <span className="text-gray-400">▋</span>}
           </div>
         )}
