@@ -42,11 +42,10 @@ export function PdfReader() {
   const [showSuggest, setShowSuggest] = useState(false);
   const [bilingual, setBilingual] = useState<{ text: string; x: number; y: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const pageRefs = useRef<Map<number, HTMLElement>>(new Map());
 
   const paper = state.currentPaper;
   const pageWidth = Math.round(780 * zoom);
-  const { renderedPages, registerPage, setPageHeight, heightFor } = usePageVirtualization(pageCount, scrollRef);
+  const { renderedPages, getPageRef, getPageElement, setPageHeight, heightFor } = usePageVirtualization(pageCount, scrollRef);
 
   // PDF [n] citations → build a map and let the hook process text layer
   const refIndex = useMemo(() => {
@@ -171,14 +170,15 @@ export function PdfReader() {
     const onScroll = () => {
       const scrollMid = el.scrollTop + el.clientHeight / 3;
       let best = 1;
-      pageRefs.current.forEach((div, num) => {
-        if (div.offsetTop <= scrollMid) best = num;
-      });
+      for (let n = 1; n <= pageCount; n++) {
+        const div = getPageElement(n);
+        if (div && div.offsetTop <= scrollMid) best = n;
+      }
       setCurrentPage(best);
     };
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
-  }, [pageCount]);
+  }, [pageCount, getPageElement]);
 
   // Right-click on PDF text
   useEffect(() => {
@@ -236,9 +236,9 @@ export function PdfReader() {
   }, [paper?.id, state.highlights, citePopover]);
 
   const goToPage = useCallback((page: number) => {
-    const el = pageRefs.current.get(page);
+    const el = getPageElement(page);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
+  }, [getPageElement]);
 
   // Expose goToPage globally so other panels (figures, etc.) can use it
   useEffect(() => {
@@ -349,7 +349,7 @@ export function PdfReader() {
       onClick: () => {
         // Anchor popover near the selection's last rect
         const lastRect = captured.position.rects[captured.position.rects.length - 1];
-        const pageEl = pageRefs.current.get(captured.page);
+        const pageEl = getPageElement(captured.page);
         const pageRect = pageEl?.getBoundingClientRect();
         const anchor = pageRect
           ? { x: pageRect.left + lastRect.x * zoom, y: pageRect.top + (lastRect.y + lastRect.height) * zoom }
@@ -533,10 +533,7 @@ export function PdfReader() {
                 className="pdf-page"
                 data-page-number={pageNum}
                 style={{ width: pageWidth, minHeight: heightFor(pageNum) }}
-                ref={(el) => {
-                  if (el) pageRefs.current.set(pageNum, el);
-                  registerPage(pageNum, el);
-                }}
+                ref={getPageRef(pageNum)}
               >
                 {shouldRender ? (
                   <Page

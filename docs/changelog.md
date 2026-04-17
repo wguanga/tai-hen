@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-04-17 · 🔴 修复打开 PDF 白屏（virtualization 无限 re-render）
+- 根因：`<div ref={(el) => registerPage(n, el)}>` 内联箭头 → 每 render 新函数 →
+  React 卸载+挂载 ref → unobserve+observe → IntersectionObserver spec 的"新目标首次通知" →
+  setRenderedPages(new Set(...)) 每次新引用 → re-render → 无限循环 → React 崩溃白屏
+- 修复：`usePageVirtualization` 改造
+  - `getPageRef(pageNum)` 返回 **stable per-page** 回调（useRef<Map> 缓存）
+  - `registerPage` 对相同 element 做 no-op
+  - `setRenderedPages` reducer 在内容不变时返回原引用（setsEqual 比较）
+  - 暴露 `getPageElement(n)` 替代 PdfReader 的独立 pageRefs
+- 回归测试：`usePageVirtualization.test.ts` 新增 "stability" describe 块（5 cases）
+- 记录到 `dev-tips.md#411`
+
 ## 2026-04-17 · 文档布局重构：项目文档搬到 docs/，.claude/ 降级为 agent 本地工作区
 - `docs/`（新）：所有项目文档（architecture / api-reference / db-schema / frontend-guide /
   backend-guide / ai-prompts / conventions / dev-tips / decisions / changelog）入版本库

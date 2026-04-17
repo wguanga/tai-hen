@@ -128,6 +128,25 @@ exec(`taskkill /pid ${pythonProcess.pid} /T /F`);
 ### 4.10 react-pdf 首次渲染 blob URL 失效
 若 `file={blobUrl}`，useMemo 稳定 URL，否则每次 render 重新创建 blob url → react-pdf 误判更换文档。
 
+### 4.11 IntersectionObserver + 内联 ref 导致无限 re-render 🔴
+**症状**：打开 4+ 页的 PDF 后整个页面白屏，控制台 "Too many re-renders"。
+
+**根因链**：
+1. JSX 里 `ref={(el) => registerPage(n, el)}` 是**每次 render 新函数**
+2. React 在 ref 回调身份变化时：先用 `null` 调旧的（卸载），再用 el 调新的（挂载）
+3. `registerPage` 收到 null 就 unobserve，再收到 el 就 observe
+4. IntersectionObserver spec：**每次 `observe(newTarget)` 都会发送一次初始 intersection 通知**（即使元素本来就可见）
+5. 通知触发 `setRenderedPages(new Set(...))`（永远返回新引用）
+6. state 变 → re-render → 新 ref 函数 → 回到步骤 2 → 无限循环 → React 崩溃
+
+**修复要点**：
+- 提供 **stable per-key** ref 回调（`useRef<Map>` 缓存每个 pageNum 的回调）
+- `registerPage` 对相同 element 做 no-op
+- `setState` 的 reducer 在内容不变时返回原引用
+
+修复见 `frontend/src/hooks/usePageVirtualization.ts` 的 `getPageRef`/`setsEqual`。
+回归测试在 `usePageVirtualization.test.ts` 的 "stability" describe 块。
+
 ---
 
 ## 5. 性能检查
