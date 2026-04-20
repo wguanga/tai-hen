@@ -7,6 +7,7 @@ export interface KeyboardActions {
   translate: () => void;
   addNote: () => void;
   exportMd: () => void;
+  toggleBookmark?: () => void;
 }
 
 export function useKeyboard(actions: KeyboardActions, enabled: boolean) {
@@ -37,6 +38,8 @@ export function useKeyboard(actions: KeyboardActions, enabled: boolean) {
         case 'T': actions.translate(); break;
         case 'n':
         case 'N': actions.addNote(); break;
+        case 'b':
+        case 'B': actions.toggleBookmark?.(); break;
       }
     };
     window.addEventListener('keydown', handler);

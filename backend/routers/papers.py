@@ -10,7 +10,7 @@ from deps import get_session
 from errors import PaperNotFound
 from repositories.paper_repo import PaperRepo
 from schemas import PaperList, PaperRead, PaperUpdate
-from services.paper_service import upload_paper
+from services.paper_service import upload_paper, import_from_url
 
 router = APIRouter(tags=["papers"])
 
@@ -40,6 +40,17 @@ def _to_read(paper) -> PaperRead:
 @router.post("/upload", response_model=PaperRead)
 async def upload(file: UploadFile = File(...), session: Session = Depends(get_session)):
     paper = await upload_paper(session, file)
+    return _to_read(paper)
+
+
+class _UrlImportBody(__import__("pydantic").BaseModel):  # inline to avoid new schema file
+    url: str
+
+
+@router.post("/import_url", response_model=PaperRead)
+async def import_url(body: _UrlImportBody, session: Session = Depends(get_session)):
+    """Download a PDF from a URL (arXiv abs/pdf or direct link) and add it."""
+    paper = await import_from_url(session, body.url)
     return _to_read(paper)
 
 
@@ -259,6 +270,42 @@ def get_figure_image(paper_id: str, xref: int, session: Session = Depends(get_se
     png = render_figure_png(str(path), xref)
     if png is None:
         raise PaperNotFound(detail={"reason": "figure image not found"})
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+
+
+@router.get("/{paper_id}/page/{page}/clip.png")
+def get_page_clip_image(
+    paper_id: str,
+    page: int,
+    cx0: float = 0.0,
+    cy0: float = 0.0,
+    cx1: float = 0.0,
+    cy1: float = 0.0,
+    session: Session = Depends(get_session),
+):
+    """Render the figure area ABOVE a caption bbox as PNG.
+
+    Given caption bbox (cx0,cy0,cx1,cy1) in PDF points, clips a strip above
+    the caption (where the figure typically sits) and renders it. Fallback
+    for vector figures without an embedded image xref.
+    """
+    paper = PaperRepo(session).by_id(paper_id)
+    if not paper:
+        raise PaperNotFound(detail={"paper_id": paper_id})
+    from services.pdf_parser import render_page_clip_png, figure_clip_bbox_for
+    import fitz as _fitz
+    path = Path("data") / paper.file_path
+    clip = None
+    if cx1 > cx0 and cy1 > cy0:
+        doc = _fitz.open(str(path))
+        try:
+            page_h = doc[page - 1].rect.y1 if 1 <= page <= len(doc) else 842.0
+        finally:
+            doc.close()
+        clip = figure_clip_bbox_for((cx0, cy0, cx1, cy1), page_h)
+    png = render_page_clip_png(str(path), page, clip)
+    if png is None:
+        raise PaperNotFound(detail={"reason": "page clip render failed"})
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
 
 

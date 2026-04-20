@@ -1,0 +1,21 @@
+# Backend — inverted whitelist (inherited from root)
+# --------------------------------------------------
+# `data/`, `__pycache__/`, `.pytest_cache/`, etc. are left un-whitelisted
+# and therefore excluded automatically by the leading `*`.
+
+*
+
+!.gitignore
+
+# Python source + build/test config (at any depth)
+!**/*.py
+!*.ini
+!*.txt
+!*.toml
+
+# Subdirectories — git needs these un-ignored to descend into them.
+# Files inside are filtered by the rules above (**/*.py etc.).
+!routers/
+!services/
+!repositories/
+!tests/

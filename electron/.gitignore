@@ -1,0 +1,8 @@
+# Electron shell — JS only
+
+*
+
+!.gitignore
+!*.js
+!*.mjs
+!*.cjs

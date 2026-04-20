@@ -2,6 +2,19 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useAppStore } from '../store/app-store';
 import { useToast } from './Toast';
+import { ReadingRing } from './ReadingRing';
+
+function readingPercentFor(paperId: string, totalPages: number): number {
+  if (totalPages <= 0) return 0;
+  try {
+    const saved = localStorage.getItem(`reading_progress_${paperId}`);
+    const page = saved ? Number(saved) : 0;
+    if (!Number.isFinite(page) || page <= 0) return 0;
+    return Math.min(100, (page / totalPages) * 100);
+  } catch {
+    return 0;
+  }
+}
 
 export function PaperList() {
   const { state, dispatch } = useAppStore();
@@ -92,9 +105,8 @@ export function PaperList() {
   }, [state.papers, search, tagFilter]);
 
   return (
-    <div className="w-60 border-r bg-white dark:bg-gray-800 flex-shrink-0 flex flex-col">
-      <div className="px-3 py-2 border-b">
-        <div className="text-sm font-medium mb-1.5 dark:text-gray-200">论文库 ({state.papers.length})</div>
+    <div className="h-full flex flex-col">
+      <div className="px-3 py-2 border-b border-indigo-100/60 dark:border-indigo-900/40">
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -120,19 +132,23 @@ export function PaperList() {
       </div>
       <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 && (
-          <div className="text-xs text-gray-400 p-3">
-            {search || tagFilter ? '无匹配结果' : '上传 PDF 开始'}
+          <div className="text-xs text-gray-400 dark:text-gray-500 p-4 text-center">
+            <div className="text-3xl mb-2 opacity-60">📖</div>
+            {search || tagFilter ? '无匹配结果' : '把 PDF 拖进来开始阅读之旅'}
           </div>
         )}
         {filtered.map((p) => {
           const editing = editingTagsFor === p.id;
+          const isActive = state.currentPaper?.id === p.id;
           return (
             <div
               key={p.id}
               onClick={() => !editing && openPaper(p.id)}
               className={
-                'group px-3 py-2 border-b cursor-pointer ' +
-                (state.currentPaper?.id === p.id ? 'bg-indigo-50 dark:bg-indigo-900/30' : 'hover:bg-gray-50 dark:hover:bg-gray-700')
+                'card-lift group px-3 py-2 border-b border-indigo-50/80 dark:border-indigo-900/30 cursor-pointer relative ' +
+                (isActive
+                  ? 'bg-gradient-to-r from-indigo-100/70 via-fuchsia-50/60 to-transparent dark:from-indigo-900/40 dark:via-fuchsia-900/20 dark:to-transparent border-l-2 border-l-fuchsia-500'
+                  : 'hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20')
               }
             >
               <div className="flex items-start justify-between gap-2">
@@ -177,13 +193,20 @@ export function PaperList() {
                     </div>
                   )}
                 </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); remove(p.id); }}
-                  className="opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-red-500"
-                  title="删除"
-                >
-                  ✕
-                </button>
+                <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                  <div
+                    title={`已读 ${Math.round(readingPercentFor(p.id, p.total_pages))}% · 第 ${Math.round((readingPercentFor(p.id, p.total_pages) / 100) * p.total_pages)} / ${p.total_pages} 页`}
+                  >
+                    <ReadingRing percent={readingPercentFor(p.id, p.total_pages)} />
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); remove(p.id); }}
+                    className="opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-red-500"
+                    title="删除"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             </div>
           );

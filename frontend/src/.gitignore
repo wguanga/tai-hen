@@ -1,0 +1,17 @@
+# Frontend source — TypeScript / React / CSS only
+
+*
+
+!.gitignore
+
+# Source files at any depth
+!**/*.ts
+!**/*.tsx
+!**/*.css
+
+# Subdirectories (git needs these un-ignored to descend)
+!components/
+!hooks/
+!store/
+!styles/
+!test/

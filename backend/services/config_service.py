@@ -35,7 +35,7 @@ def save_config(payload: dict) -> dict:
         if ak is None:
             current["api_key"] = ""
         elif ak != "":
-            current["api_key"] = ak
+            current["api_key"] = ak.strip()
 
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")

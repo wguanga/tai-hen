@@ -17,6 +17,8 @@ def extract_metadata(pdf_path: str) -> dict:
 
         authors_raw = meta.get("author") or ""
         authors = [a.strip() for a in re.split(r"[,;]", authors_raw) if a.strip()]
+        if not authors:
+            authors = _guess_authors_from_first_page(doc, title)
 
         year = _extract_year(meta.get("creationDate") or meta.get("modDate") or "", doc)
         return {
@@ -27,6 +29,58 @@ def extract_metadata(pdf_path: str) -> dict:
         }
     finally:
         doc.close()
+
+
+def _guess_authors_from_first_page(doc, title: str) -> list[str]:
+    """Heuristic: on the first page, find lines below the title that look like
+    an author list (names separated by commas, with possible superscript markers).
+
+    Works for most academic papers; falls back to empty list for unusual layouts.
+    """
+    if len(doc) == 0:
+        return []
+    text = doc[0].get_text()
+    if not text:
+        return []
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return []
+
+    # Find the title line and look at the next few lines below it
+    start_idx = 0
+    if title:
+        title_head = title.strip()[:40]
+        for i, ln in enumerate(lines[:20]):
+            if title_head and title_head in ln:
+                start_idx = i + 1
+                break
+
+    # Scan up to 6 lines after title for a plausible author line
+    # Accept: any line with ≥1 comma/"and"/"&" AND majority-word content AND
+    # no URLs / no leading numbers / length 8-300
+    candidate_re = re.compile(r"[,;]|(\band\b)|&", re.IGNORECASE)
+    skip_re = re.compile(r"(https?://|\babstract\b|@|[{}]|^\d)", re.IGNORECASE)
+    for ln in lines[start_idx : start_idx + 8]:
+        if len(ln) < 8 or len(ln) > 300:
+            continue
+        if skip_re.search(ln):
+            continue
+        if not candidate_re.search(ln):
+            continue
+        # Strip footnote / affiliation markers (digits and symbols after names)
+        cleaned = re.sub(r"[\d\*†‡§¶]+", "", ln)
+        parts = re.split(r",|;|\s+and\s+|&", cleaned, flags=re.IGNORECASE)
+        authors = [p.strip(" .·") for p in parts if p.strip(" .·")]
+        # Must look like names: at least 2 items, each 2-60 chars, mostly letters
+        if len(authors) < 1:
+            continue
+        good = [
+            a for a in authors
+            if 2 <= len(a) <= 60 and re.search(r"[A-Za-z\u4e00-\u9fff]", a)
+        ]
+        if good and len(good) <= 20:
+            return good[:20]
+    return []
 
 
 def _guess_title_from_first_page(doc) -> str:
@@ -268,12 +322,16 @@ def extract_figures(pdf_path: str, max_figures: int = 50) -> list[dict]:
                 caption = text[:400]
                 # Pick first image on this page if present
                 xref = image_xrefs[0] if image_xrefs else None
+                # Caption bbox (in PDF points). Used to clip the figure area
+                # above the caption for vector figures without an image xref.
+                bbox = b.get("bbox") or [0.0, 0.0, 0.0, 0.0]
                 out.append({
                     "number": number,
                     "page": page_num,
                     "kind": kind,
                     "caption": caption,
                     "image_xref": xref,
+                    "caption_bbox": [float(v) for v in bbox],
                 })
                 if len(out) >= max_figures:
                     break
@@ -306,6 +364,70 @@ def render_figure_png(pdf_path: str, image_xref: int) -> bytes | None:
             return None
     finally:
         doc.close()
+
+
+def render_page_clip_png(
+    pdf_path: str,
+    page: int,
+    clip_bbox: tuple[float, float, float, float] | None = None,
+    *,
+    zoom: float = 2.0,
+) -> bytes | None:
+    """Render a rectangular page region as PNG.
+
+    Used as a fallback for "figures" that are vector-drawn (no embedded image
+    xref). If clip_bbox is None, renders the full page. bbox is in PDF points
+    (same coordinate system as page.rect / block["bbox"]).
+    """
+    doc = fitz.open(pdf_path)
+    try:
+        if page < 1 or page > len(doc):
+            return None
+        p = doc[page - 1]
+        matrix = fitz.Matrix(zoom, zoom)
+        if clip_bbox is not None:
+            x0, y0, x1, y1 = clip_bbox
+            # Clamp to page bounds, ensure positive area
+            pr = p.rect
+            x0 = max(pr.x0, min(x0, pr.x1))
+            y0 = max(pr.y0, min(y0, pr.y1))
+            x1 = max(pr.x0, min(x1, pr.x1))
+            y1 = max(pr.y0, min(y1, pr.y1))
+            if x1 - x0 < 10 or y1 - y0 < 10:
+                # Degenerate clip — fall back to full page
+                clip = None
+            else:
+                clip = fitz.Rect(x0, y0, x1, y1)
+        else:
+            clip = None
+        pix = p.get_pixmap(matrix=matrix, clip=clip, alpha=False)
+        return pix.tobytes("png")
+    except Exception:
+        return None
+    finally:
+        doc.close()
+
+
+def figure_clip_bbox_for(caption_bbox: tuple[float, float, float, float], page_rect_y1: float) -> tuple[float, float, float, float]:
+    """Given a caption bbox, return a clip bbox covering the figure above it.
+
+    Heuristic: figures sit above their captions. Clip from page top to the
+    caption's top edge, horizontally spanning a bit wider than the caption
+    (full page width works for most layouts).
+    Returns (x0, y0, x1, y1) in PDF points.
+    """
+    cx0, cy0, cx1, _cy1 = caption_bbox
+    # Cap the strip at 70% of page height above caption (avoids grabbing
+    # unrelated earlier content if caption is near bottom of a mostly-text page).
+    strip_h_max = page_rect_y1 * 0.70
+    y0 = max(0.0, cy0 - strip_h_max)
+    y1 = max(cy0 - 2.0, y0 + 20.0)  # small gap above caption
+    # Expand horizontally to include the whole typical column
+    width = max(cx1 - cx0, 200.0)
+    center = (cx0 + cx1) / 2
+    x0 = max(0.0, center - width)
+    x1 = center + width
+    return (x0, y0, x1, y1)
 
 
 def extract_references(pdf_path: str, max_entries: int = 200) -> list[dict]:

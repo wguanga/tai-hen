@@ -74,7 +74,9 @@ export interface AppConfig {
   provider: 'openai' | 'anthropic' | 'ollama';
   model: string;
   has_api_key: boolean;
+  api_key_preview: string;
   base_url: string;
   ollama_model: string;
   supports_vision: boolean;
+  vision_source: 'cache' | 'heuristic';
 }

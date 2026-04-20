@@ -1,9 +1,17 @@
 import { BASE } from '../api';
 
+export type StreamStatus = {
+  stage: 'reading' | 'map' | 'reduce' | 'writing' | 'fallback' | string;
+  msg?: string;
+  chunk?: number;
+  total?: number;
+};
+
 export type StreamHandlers = {
   onChunk: (text: string) => void;
   onDone: () => void;
   onError?: (code: string, message: string) => void;
+  onStatus?: (status: StreamStatus) => void;
   signal?: AbortSignal;
 };
 
@@ -53,6 +61,10 @@ export async function streamSSE(
         try {
           const evt = JSON.parse(payload);
           if (evt.type === 'chunk') h.onChunk(evt.text ?? '');
+          else if (evt.type === 'status') {
+            const { type: _t, ...status } = evt;
+            h.onStatus?.(status as StreamStatus);
+          }
           else if (evt.type === 'done') { h.onDone(); return; }
           else if (evt.type === 'error') {
             h.onError?.(evt.code ?? 'LLM_ERROR', evt.message ?? 'unknown');

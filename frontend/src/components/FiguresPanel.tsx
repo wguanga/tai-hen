@@ -11,6 +11,7 @@ type Figure = {
   kind: 'figure' | 'table';
   caption: string;
   image_xref: number | null;
+  caption_bbox?: number[] | null;
 };
 
 export function FiguresPanel({ onGoToPage }: { onGoToPage: (page: number) => void }) {
@@ -46,10 +47,6 @@ export function FiguresPanel({ onGoToPage }: { onGoToPage: (page: number) => voi
       toast('当前模型不支持图像，请在设置中切换（如 gpt-4o / claude-3.x）', 'error');
       return;
     }
-    if (fig.image_xref == null) {
-      toast('未能从 PDF 提取该图像', 'error');
-      return;
-    }
     const key = `${fig.page}-${fig.number}-${fig.kind}`;
     setExplaining(key);
     setExplanations((m) => ({ ...m, [key]: '' }));
@@ -61,6 +58,7 @@ export function FiguresPanel({ onGoToPage }: { onGoToPage: (page: number) => voi
       kind: fig.kind,
       caption: fig.caption,
       image_xref: fig.image_xref,
+      caption_bbox: fig.caption_bbox ?? null,
     }, {
       onChunk: (t) => {
         acc += t;
@@ -108,19 +106,19 @@ export function FiguresPanel({ onGoToPage }: { onGoToPage: (page: number) => voi
                 </button>
                 <button
                   onClick={() => explain(f)}
-                  disabled={isExplaining || !visionSupported || f.image_xref == null}
+                  disabled={isExplaining || !visionSupported}
                   title={
                     !visionSupported
                       ? '当前模型不支持图像（在设置中切换 gpt-4o / claude-3.x / llava 等）'
                       : f.image_xref == null
-                        ? '未能从 PDF 提取该图像'
+                        ? 'AI 解读此图/表（将渲染页面区域）'
                         : 'AI 解读此图/表'
                   }
                   className={
                     'text-xs px-2 py-0.5 rounded ' +
                     (isExplaining
                       ? 'bg-indigo-300 text-white'
-                      : visionSupported && f.image_xref != null
+                      : visionSupported
                         ? 'bg-indigo-500 text-white hover:bg-indigo-600'
                         : 'bg-gray-200 text-gray-400 cursor-not-allowed dark:bg-gray-700 dark:text-gray-500')
                   }
@@ -128,14 +126,21 @@ export function FiguresPanel({ onGoToPage }: { onGoToPage: (page: number) => voi
                   {isExplaining ? '解读中…' : '🤖 AI 解读'}
                 </button>
               </div>
-              {f.image_xref != null && (
+              {f.image_xref != null ? (
                 <img
                   src={api.figureImageUrl(paper.id, f.image_xref)}
                   alt={f.caption}
                   className="mt-1 max-h-60 object-contain border border-gray-200 dark:border-gray-700 rounded bg-white"
                   loading="lazy"
                 />
-              )}
+              ) : f.caption_bbox && f.caption_bbox.length >= 4 ? (
+                <img
+                  src={api.pageClipUrl(paper.id, f.page, f.caption_bbox)}
+                  alt={f.caption}
+                  className="mt-1 max-h-60 object-contain border border-gray-200 dark:border-gray-700 rounded bg-white"
+                  loading="lazy"
+                />
+              ) : null}
               <div className="text-xs text-gray-600 dark:text-gray-300 mt-1 italic line-clamp-3">
                 {f.caption}
               </div>

@@ -1,8 +1,34 @@
 """Unified LLM streaming. Prompts are centralized in .claude/ai-prompts.md."""
+import asyncio
 from typing import AsyncGenerator, Iterable
 
-from errors import LlmConfigMissing, LlmUpstreamError
+from errors import LlmConfigMissing, LlmUpstreamError, LlmRateLimited
 from services.config_service import load_config
+
+
+def friendly_llm_error(e: Exception) -> str:
+    """Translate noisy SDK / upstream errors to short Chinese hints."""
+    msg = str(e)
+    low = msg.lower()
+    if "401" in msg or "unauthorized" in low or "invalid api key" in low or "authentication" in low:
+        return "API Key 无效或已过期 —— 请到服务商后台重新生成"
+    if "404" in msg and "model" in low:
+        return "模型名不存在 —— 打开设置点 '🔄 拉取可用模型' 看真实列表"
+    if "429" in msg or "rate limit" in low or "请求过快" in msg or "too many" in low:
+        return "触发限流 —— 稍后重试；或缩减输入、换付费档"
+    if "context" in low and ("length" in low or "exceed" in low or "too long" in low):
+        return "上下文超过模型限制 —— 换更大上下文的模型，或减小输入"
+    if "timeout" in low or "timed out" in low:
+        return "请求超时 —— 检查网络或服务商状态"
+    if "connection" in low and ("refused" in low or "reset" in low):
+        return "连接失败 —— 检查 base_url 或本地 Ollama 是否启动"
+    return msg[:300]
+
+
+def _is_rate_limit(e: Exception) -> bool:
+    msg = str(e)
+    low = msg.lower()
+    return "429" in msg or "rate limit" in low or "请求过快" in msg or "too many" in low
 
 
 SYSTEM_PROMPTS = {
@@ -113,13 +139,29 @@ VISION_MODEL_PREFIXES = {
 }
 
 
-def model_supports_vision(provider: str, model: str) -> bool:
-    """Return True if the given provider+model can accept images."""
+def model_supports_vision(provider: str, model: str, base_url: str = "") -> bool:
+    """Return True if the given provider+model can accept images.
+
+    Checks the probe cache first; falls back to prefix heuristic only if uncached.
+    """
     if not model:
         return False
+    from services import vision_cache_service
+    cached = vision_cache_service.get(provider, base_url, model)
+    if cached is not None:
+        return bool(cached["supports_vision"])
     model_l = model.lower()
     prefixes = VISION_MODEL_PREFIXES.get(provider, ())
     return any(model_l.startswith(p) for p in prefixes)
+
+
+def vision_source(provider: str, model: str, base_url: str = "") -> str:
+    """Whether the supports_vision value came from 'cache' or 'heuristic'."""
+    if not model:
+        return "heuristic"
+    from services import vision_cache_service
+    cached = vision_cache_service.get(provider, base_url, model)
+    return "cache" if cached is not None else "heuristic"
 
 
 async def stream_llm(messages: list[dict], system: str) -> AsyncGenerator[str, None]:
@@ -143,6 +185,26 @@ async def stream_llm(messages: list[dict], system: str) -> AsyncGenerator[str, N
         raise LlmUpstreamError(f"Unknown provider: {provider}")
 
 
+async def _create_with_retry(create_fn, *, retries: int = 2, base_delay: float = 2.0):
+    """Call create_fn() with exponential backoff on 429 / rate limit.
+
+    Only retries BEFORE any chunk is streamed — once streaming begins, the
+    connection is committed and a mid-stream error is propagated.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            return await create_fn()
+        except Exception as e:
+            last_exc = e
+            if not _is_rate_limit(e) or attempt == retries:
+                raise
+            delay = base_delay * (2 ** attempt)
+            await asyncio.sleep(delay)
+    # Unreachable, but keeps type checker happy
+    raise last_exc  # type: ignore[misc]
+
+
 async def _stream_openai(messages, system, config):
     from openai import AsyncOpenAI
     try:
@@ -150,32 +212,41 @@ async def _stream_openai(messages, system, config):
             api_key=config["api_key"],
             base_url=config.get("base_url") or None,
         )
-        stream = await client.chat.completions.create(
+        stream = await _create_with_retry(lambda: client.chat.completions.create(
             model=config.get("model", "gpt-4o-mini"),
             messages=[{"role": "system", "content": system}] + list(messages),
             stream=True,
-        )
+        ))
         async for chunk in stream:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
     except Exception as e:
-        raise LlmUpstreamError(str(e))
+        if _is_rate_limit(e):
+            raise LlmRateLimited(friendly_llm_error(e))
+        raise LlmUpstreamError(friendly_llm_error(e))
 
 
 async def _stream_anthropic(messages, system, config):
     import anthropic
     try:
         client = anthropic.AsyncAnthropic(api_key=config["api_key"])
-        async with client.messages.stream(
-            model=config.get("model", "claude-sonnet-4-6"),
-            max_tokens=2048,
-            system=system,
-            messages=list(messages),
-        ) as stream:
+        # anthropic.messages.stream is a context manager, not awaitable; retry
+        # the .create path first, then fall through to streaming.
+        async def _open_stream():
+            return client.messages.stream(
+                model=config.get("model", "claude-sonnet-4-6"),
+                max_tokens=2048,
+                system=system,
+                messages=list(messages),
+            )
+        cm = await _create_with_retry(_open_stream)
+        async with cm as stream:
             async for text in stream.text_stream:
                 yield text
     except Exception as e:
-        raise LlmUpstreamError(str(e))
+        if _is_rate_limit(e):
+            raise LlmRateLimited(friendly_llm_error(e))
+        raise LlmUpstreamError(friendly_llm_error(e))
 
 
 async def stream_llm_with_image(image_bytes: bytes, text_prompt: str, system: str) -> AsyncGenerator[str, None]:
@@ -268,4 +339,4 @@ async def _stream_ollama(messages, system, config):
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
     except Exception as e:
-        raise LlmUpstreamError(str(e))
+        raise LlmUpstreamError(friendly_llm_error(e))

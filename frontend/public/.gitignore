@@ -1,0 +1,11 @@
+# Static assets served at site root.
+#
+# Currently everything in this directory is auto-populated by
+# frontend/scripts/copy-pdfjs-assets.mjs on postinstall (cmaps/, standard_fonts/).
+# If you add a real asset (logo.png, favicon.ico), un-ignore it below.
+
+*
+
+!.gitignore
+# !favicon.ico
+# !logo.png

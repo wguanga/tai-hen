@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url';
 
 import { api } from '../api';
 import { useAppStore } from '../store/app-store';
@@ -20,11 +21,30 @@ import { SearchBar } from './SearchBar';
 import { HighlightMinimap } from './HighlightMinimap';
 import { SuggestHighlightsModal } from './SuggestHighlightsModal';
 import { BilingualPopover } from './BilingualPopover';
+import { SelectionToolbar } from './SelectionToolbar';
+import { Fireflies } from './Fireflies';
+import { CreatureScrollbar } from './CreatureScrollbar';
+import { HighlightPreview } from './HighlightPreview';
+import { CompletionCelebration } from './CompletionCelebration';
+import { useAppPrefs } from '../hooks/useAppPrefs';
+import { useBookmarks } from '../hooks/useBookmarks';
+import { usePaperAccessory } from '../hooks/usePaperAccessory';
+import { useReadingHeatmap } from '../hooks/useReadingHeatmap';
+import { useReadingStreak } from '../hooks/useReadingStreak';
+import { Constellations } from './Constellations';
+import { HoverTranslate } from './HoverTranslate';
+import { useAIPrefs } from '../hooks/useAIPrefs';
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.js',
-  import.meta.url,
-).toString();
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+// CJK + non-embedded font support. These dirs are copied to public/ by
+// frontend/scripts/copy-pdfjs-assets.mjs (postinstall). Without cMapUrl,
+// Chinese/Japanese/Korean PDFs render garbled glyphs.
+const PDF_OPTIONS = {
+  cMapUrl: '/cmaps/',
+  cMapPacked: true,
+  standardFontDataUrl: '/standard_fonts/',
+} as const;
 
 export function PdfReader() {
   const { state, dispatch } = useAppStore();
@@ -41,10 +61,46 @@ export function PdfReader() {
   const [showSearch, setShowSearch] = useState(false);
   const [showSuggest, setShowSuggest] = useState(false);
   const [bilingual, setBilingual] = useState<{ text: string; x: number; y: number } | null>(null);
+  const [selMenu, setSelMenu] = useState<{ x: number; y: number; captured: CapturedSelection } | null>(null);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [showPageIndicator, setShowPageIndicator] = useState(false);
+  const pageIndicatorTimer = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [outlineTicks, setOutlineTicks] = useState<{ pct: number; title: string; page: number }[]>([]);
+  const [hlHover, setHlHover] = useState<{ highlight: Highlight; x: number; y: number } | null>(null);
+  const hlHoverTimer = useRef<number | null>(null);
+  const [ripples, setRipples] = useState<{ id: number; page: number; x: number; y: number; color: HighlightColor }[]>([]);
+  const rippleIdRef = useRef(0);
+  const [celebrating, setCelebrating] = useState(false);
+  const celebratedRef = useRef<string | null>(null);
+  // Creature emotion overlay (priorities are handled in effectiveFor)
+  const [creatureMood, setCreatureMood] = useState<import('./Mossling').MosslingEmotion | null>(null);
+  const moodTimer = useRef<number | null>(null);
+  const flashMood = useCallback((m: import('./Mossling').MosslingEmotion, ms: number) => {
+    if (moodTimer.current) window.clearTimeout(moodTimer.current);
+    setCreatureMood(m);
+    moodTimer.current = window.setTimeout(() => setCreatureMood(null), ms);
+  }, []);
+  // Note fly overlays: when a note is saved, a small colored orb flies from
+  // the highlight's screen position toward the right side (notes panel).
+  const [noteFlies, setNoteFlies] = useState<{ id: number; x: number; y: number; color: string }[]>([]);
+  const flyIdRef = useRef(0);
 
   const paper = state.currentPaper;
-  const pageWidth = Math.round(780 * zoom);
+  const prefs = useAppPrefs();
+  const bookmarks = useBookmarks(paper?.id);
+  const accessory = usePaperAccessory(paper);
+  const aiPrefs = useAIPrefs();
+  const heatmap = useReadingHeatmap(paper?.id, currentPage);
+  const { streak, markReadToday } = useReadingStreak();
+  useEffect(() => { if (paper) markReadToday(); }, [paper?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Level is surfaced via window.__mosslingLevel by App so we don't have to
+  // drill the app-stats hook through props here
+  const mosslingLevel = typeof window !== 'undefined' ? (window as any).__mosslingLevel || 1 : 1;
+  const [openingRing, setOpeningRing] = useState(0); // incrementing key triggers animation re-mount
+  // In two-page mode shrink individual page width so a pair fits comfortably
+  const pageWidth = Math.round((prefs.twoPage ? 560 : 780) * zoom);
   const { renderedPages, getPageRef, getPageElement, setPageHeight, heightFor } = usePageVirtualization(pageCount, scrollRef);
 
   // PDF [n] citations → build a map and let the hook process text layer
@@ -56,6 +112,179 @@ export function PdfReader() {
   usePdfCitations(scrollRef, refIndex);
 
   const [citePopover, setCitePopover] = useState<{ nums: number[]; x: number; y: number } | null>(null);
+
+  // 🌱 Curious when a paper opens (first 3 seconds) + opening ring burst
+  useEffect(() => {
+    if (paper) {
+      flashMood('curious', 2800);
+      setOpeningRing((n) => n + 1);
+    }
+  }, [paper?.id, flashMood]);
+
+  // 😴 Sleepy after 25s of no scroll activity on the same page (only if no other mood)
+  useEffect(() => {
+    if (!paper) return;
+    const t = window.setTimeout(() => {
+      setCreatureMood((prev) => (prev == null ? 'sleepy' : prev));
+    }, 25_000);
+    return () => window.clearTimeout(t);
+  }, [paper?.id, currentPage]);
+
+  // 💡 Fetch figures + lazily generate AI insights (capped at 10 to avoid cost)
+  useEffect(() => {
+    if (!paper) { setFigures([]); return; }
+    let cancelled = false;
+    api.getFigures(paper.id).then((r) => {
+      if (cancelled) return;
+      setFigures(r.items);
+      if (!aiPrefs.isEnabled('figure_insight')) return;
+      // Fire off insight requests for the first N figures (sequential, gentle)
+      (async () => {
+        for (const f of r.items.slice(0, 10)) {
+          if (cancelled) return;
+          try {
+            const ins = await api.figureInsight(paper.id, {
+              number: f.number, kind: f.kind, caption: f.caption, page: f.page,
+            });
+            if (cancelled) return;
+            if (ins.insight) {
+              setFigures((prev) => prev.map((x) =>
+                x.number === f.number && x.page === f.page && x.kind === f.kind
+                  ? { ...x, insight: ins.insight } : x,
+              ));
+            }
+          } catch { /* silent, skip */ }
+        }
+      })();
+    }).catch(() => setFigures([]));
+    return () => { cancelled = true; };
+  }, [paper?.id]);
+
+  // 🧠 Confusion helper: after 90s on the same page, offer a page breakdown
+  const [confusionOffer, setConfusionOffer] = useState<{ page: number } | null>(null);
+  const confusionShownRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!paper) { setConfusionOffer(null); return; }
+    if (!aiPrefs.isEnabled('confusion_help')) { setConfusionOffer(null); return; }
+    setConfusionOffer(null);
+    const key = `${paper.id}:${currentPage}`;
+    if (confusionShownRef.current.has(key)) return;
+    const t = window.setTimeout(() => {
+      confusionShownRef.current.add(key);
+      setConfusionOffer({ page: currentPage });
+    }, 90_000);
+    return () => window.clearTimeout(t);
+  }, [paper?.id, currentPage, aiPrefs]);
+
+  const acceptConfusionHelp = useCallback(async () => {
+    if (!paper || !confusionOffer) return;
+    const page = confusionOffer.page;
+    setConfusionOffer(null);
+    // Push into AI panel as a user message → stream an explanation
+    dispatch({ type: 'SET_ACTIVE_HIGHLIGHT', highlight: null });
+    dispatch({ type: 'CHAT_RESET' });
+    dispatch({ type: 'CHAT_START', userMessage: { role: 'user', content: `拆解第 ${page} 页` } });
+    try {
+      const r = await api.confusionHelp(paper.id, page);
+      dispatch({ type: 'CHAT_CHUNK', text: r.explanation });
+      dispatch({ type: 'CHAT_DONE', finalText: r.explanation });
+    } catch (e) {
+      dispatch({ type: 'CHAT_ERROR', text: (e as Error).message });
+    }
+  }, [paper, confusionOffer, dispatch]);
+
+  // 🎉 Proud for 5s after completion celebration kicks in
+  useEffect(() => {
+    if (celebrating) flashMood('proud', 5_000);
+  }, [celebrating, flashMood]);
+
+  // ✨ Note → highlight bridge: when user hovers a note card, ping the
+  // corresponding highlight on the PDF for ~1.2s (gold pulse + auto-scroll).
+  const [pingedHlId, setPingedHlId] = useState<string | null>(null);
+  const pingTimer = useRef<number | null>(null);
+  useEffect(() => {
+    const onPing = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | { highlightId: string; noteRect?: { x: number; y: number; width: number; height: number } }
+        | undefined;
+      const id = detail?.highlightId;
+      if (!id) return;
+      setPingedHlId(id);
+      if (pingTimer.current) window.clearTimeout(pingTimer.current);
+      pingTimer.current = window.setTimeout(() => setPingedHlId(null), 1300);
+      // Auto-scroll the highlight into view, then draw a path from note → highlight
+      const hl = state.highlights.find((h) => h.id === id);
+      if (hl) {
+        const pageEl = getPageElement(hl.page);
+        const container = scrollRef.current;
+        if (pageEl && container) {
+          const pageTop = pageEl.offsetTop;
+          const hlOffsetWithinPage = (hl.position.rects[0]?.y ?? 0) * zoom;
+          container.scrollTo({
+            top: pageTop + hlOffsetWithinPage - container.clientHeight / 2 + 60,
+            behavior: 'smooth',
+          });
+        }
+        // Compute highlight's on-screen center AFTER the smooth-scroll lands
+        if (detail?.noteRect && pageEl) {
+          window.setTimeout(() => {
+            const pageRect = pageEl.getBoundingClientRect();
+            const r0 = hl.position.rects[0];
+            if (!r0) return;
+            const hlCenter = {
+              x: pageRect.left + (r0.x + r0.width / 2) * zoom,
+              y: pageRect.top + (r0.y + r0.height / 2) * zoom,
+            };
+            const noteAnchor = {
+              x: detail.noteRect!.x,           // left edge of the note card
+              y: detail.noteRect!.y,           // middle vertically
+            };
+            window.dispatchEvent(new CustomEvent('note-path-show', {
+              detail: { from: noteAnchor, to: hlCenter },
+            }));
+          }, 380);
+        }
+      }
+    };
+    window.addEventListener('highlight-ping', onPing);
+    return () => window.removeEventListener('highlight-ping', onPing);
+  }, [state.highlights, getPageElement, zoom]);
+
+  // 📝 Note-fly: anywhere in the app dispatches a 'note-fly' CustomEvent
+  // with {x, y, color} → we launch a flying orb toward the right panel.
+  useEffect(() => {
+    const onFly = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { x: number; y: number; color?: string };
+      if (!detail) return;
+      const id = ++flyIdRef.current;
+      setNoteFlies((arr) => [...arr, { id, x: detail.x, y: detail.y, color: detail.color || '#fde68a' }]);
+      window.setTimeout(() => setNoteFlies((arr) => arr.filter((f) => f.id !== id)), 1000);
+    };
+    window.addEventListener('note-fly', onFly);
+    return () => window.removeEventListener('note-fly', onFly);
+  }, []);
+
+  // Fetch outline (top-level chapters only) for scrollbar tick marks
+  useEffect(() => {
+    if (!paper || pageCount === 0) { setOutlineTicks([]); return; }
+    let cancelled = false;
+    api.getOutline(paper.id)
+      .then((r) => {
+        if (cancelled) return;
+        const topLevel = r.items.filter((x) => x.level === 1);
+        const ticks = topLevel
+          .map((x) => ({
+            pct: Math.max(0, Math.min(1, (x.page - 1) / Math.max(1, pageCount - 1))),
+            title: x.title,
+            page: x.page,
+          }))
+          .filter((t, i, arr) => arr.findIndex((o) => Math.abs(o.pct - t.pct) < 0.01) === i);
+        // Cap to avoid cluttering the rail on huge books
+        setOutlineTicks(ticks.slice(0, 24));
+      })
+      .catch(() => setOutlineTicks([]));
+    return () => { cancelled = true; };
+  }, [paper?.id, pageCount]);
 
   // Reading progress: save current page
   useEffect(() => {
@@ -135,7 +364,17 @@ export function PdfReader() {
         toast('导出成功', 'success');
       } catch { toast('导出失败', 'error'); }
     },
-  }), [paper, capture, clearSelection, dispatch, toast]);
+    toggleBookmark: () => {
+      if (!paper) return;
+      bookmarks.toggle(currentPage);
+      toast(
+        bookmarks.has(currentPage)
+          ? `书签已移除 · 第 ${currentPage} 页`
+          : `🔖 书签已添加 · 第 ${currentPage} 页`,
+        'success',
+      );
+    },
+  }), [paper, capture, clearSelection, dispatch, toast, bookmarks, currentPage]);
   useKeyboard(kbActions, !!paper);
 
   const fileUrl = useMemo(
@@ -154,6 +393,27 @@ export function PdfReader() {
     return map;
   }, [state.highlights, hlFilter]);
 
+  /** Figure list + per-figure AI insights (#26 AR labels) */
+  const [figures, setFigures] = useState<Array<{
+    number: number; page: number; kind: 'figure' | 'table';
+    caption: string; caption_bbox?: number[] | null;
+    insight?: string;
+  }>>([]);
+
+  /** AI-tagged highlights: highlight_id → {tag, icon}. Filled async after save. */
+  const [hlTags, setHlTags] = useState<Map<string, { tag: string; icon: string; fresh: boolean }>>(new Map());
+
+  /** Set of highlight IDs that have at least one AI-sourced note attached. */
+  const aiExplainedHighlights = useMemo(() => {
+    const s = new Set<string>();
+    for (const n of state.notes) {
+      if (n.highlight_id && (n.source === 'ai_answer' || n.source === 'ai_summary')) {
+        s.add(n.highlight_id);
+      }
+    }
+    return s;
+  }, [state.notes]);
+
   const hlCounts = useMemo(() => {
     const c = { yellow: 0, blue: 0, green: 0, purple: 0, total: 0 };
     for (const h of state.highlights) {
@@ -163,7 +423,7 @@ export function PdfReader() {
     return c;
   }, [state.highlights]);
 
-  // Track current page via scroll
+  // Track current page + reading progress + back-to-top visibility via scroll
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || pageCount === 0) return;
@@ -175,12 +435,70 @@ export function PdfReader() {
         if (div && div.offsetTop <= scrollMid) best = n;
       }
       setCurrentPage(best);
+      const maxScroll = el.scrollHeight - el.clientHeight;
+      const pct = maxScroll > 0 ? (el.scrollTop / maxScroll) * 100 : 0;
+      setScrollProgress(pct);
+      setShowBackToTop(el.scrollTop > 600);
+      // 🌟 First time reaching 98%+ on this paper → celebrate
+      if (
+        paper &&
+        pct >= 98 &&
+        celebratedRef.current !== paper.id &&
+        pageCount >= 2
+      ) {
+        celebratedRef.current = paper.id;
+        setCelebrating(true);
+        toast('读完啦 🌟 给自己一个掌声！', 'success');
+        window.dispatchEvent(new CustomEvent('paper-finished', { detail: { paperId: paper.id } }));
+      }
+      // Show the floating page indicator while actively scrolling
+      setShowPageIndicator(true);
+      if (pageIndicatorTimer.current) window.clearTimeout(pageIndicatorTimer.current);
+      pageIndicatorTimer.current = window.setTimeout(() => setShowPageIndicator(false), 1200);
     };
     el.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
     return () => el.removeEventListener('scroll', onScroll);
-  }, [pageCount, getPageElement]);
+  }, [pageCount, getPageElement, paper?.id, toast]);
 
-  // Right-click on PDF text
+  // #7 Drag-to-scroll — grab empty page area (between lines / margins) and drag
+  //    vertically. Text selection on spans still works; interactive elements
+  //    (highlights, citations, buttons) are exempted.
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!paper || !container) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (t.closest('button, a, input, textarea, [data-hl], .cite-mark, .creature, .creature-track, .resize-handle, .ctx-menu, .selection-toolbar, .hl-preview')) return;
+      // Allow text selection: spans inside text layer are kept interactive
+      if (t.tagName === 'SPAN') return;
+      if (!t.closest('.pdf-page')) return;
+      const startY = e.clientY;
+      const startScroll = container.scrollTop;
+      let moved = false;
+      const onMove = (ev: MouseEvent) => {
+        const dy = ev.clientY - startY;
+        if (Math.abs(dy) > 3) moved = true;
+        container.scrollTop = startScroll - dy;
+      };
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        document.body.style.cursor = '';
+        if (moved) document.body.style.userSelect = '';
+      };
+      // Only change cursor / block selection once user actually starts moving
+      document.body.style.cursor = 'grabbing';
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    };
+    container.addEventListener('mousedown', onMouseDown);
+    return () => container.removeEventListener('mousedown', onMouseDown);
+  }, [paper?.id]);
+
+  // Right-click on PDF text → full context menu
   useEffect(() => {
     if (!paper) return;
     const onContextMenu = (e: MouseEvent) => {
@@ -190,10 +508,52 @@ export function PdfReader() {
       if (!captured) return;
       e.preventDefault();
       setHlMenu(null);
+      setSelMenu(null);
       setMenu({ x: e.clientX, y: e.clientY, captured });
     };
     window.addEventListener('contextmenu', onContextMenu);
     return () => window.removeEventListener('contextmenu', onContextMenu);
+  }, [paper?.id, capture]);
+
+  // Mouseup after selection → show mini floating toolbar near selection
+  useEffect(() => {
+    if (!paper) return;
+    const onMouseUp = (e: MouseEvent) => {
+      // Only left-button; right-click should go exclusively to the context menu
+      if (e.button !== 0) return;
+      // Ignore mouseups inside existing menus/toolbars
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('.selection-toolbar, .ctx-menu')) return;
+      if (!t?.closest('.pdf-page')) { setSelMenu(null); return; }
+      // Slight delay so the browser finalizes the selection range first
+      setTimeout(() => {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || sel.toString().trim().length < 2) {
+          setSelMenu(null);
+          return;
+        }
+        const captured = capture();
+        if (!captured) { setSelMenu(null); return; }
+        const range = sel.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return;
+        setMenu(null);
+        setHlMenu(null);
+        setSelMenu({
+          x: rect.left + rect.width / 2,
+          y: rect.top - 10,
+          captured,
+        });
+      }, 10);
+    };
+    const onScroll = () => setSelMenu(null);
+    window.addEventListener('mouseup', onMouseUp);
+    scrollRef.current?.addEventListener('scroll', onScroll, { passive: true });
+    const scrollEl = scrollRef.current;
+    return () => {
+      window.removeEventListener('mouseup', onMouseUp);
+      scrollEl?.removeEventListener('scroll', onScroll);
+    };
   }, [paper?.id, capture]);
 
   // Dismiss citation popover on outside click / Esc
@@ -248,10 +608,18 @@ export function PdfReader() {
 
   if (!paper) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-400">
-        <div className="text-center">
-          <div className="text-5xl mb-2">📄</div>
-          <div>左侧选择论文，或上传新 PDF</div>
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center px-6">
+          <div className="text-6xl mb-4 select-none" style={{ animation: 'unicornRun 1.4s ease-in-out infinite alternate' }}>
+            🦄
+          </div>
+          <div className="text-base font-medium bg-gradient-to-r from-indigo-600 via-fuchsia-600 to-rose-500 bg-clip-text text-transparent">
+            欢迎来到你的阅读小屋
+          </div>
+          <div className="text-xs text-gray-400 dark:text-gray-500 mt-2 leading-relaxed">
+            从左侧论文库挑一篇翻阅，或把 PDF 拖进这个窗口<br />
+            ✨ 划线 · 💬 AI 解释 · 📜 自动摘要
+          </div>
         </div>
       </div>
     );
@@ -270,6 +638,49 @@ export function PdfReader() {
       });
       dispatch({ type: 'ADD_HIGHLIGHT', highlight: hl });
       clearSelection();
+      // 👏 Mossling claps briefly for the user
+      flashMood('clapping', 1400);
+      // ✨ Fire-and-forget AI tagging for this new highlight (gated by prefs)
+      if (aiPrefs.isEnabled('tag_highlight')) (async () => {
+        try {
+          const t = await api.tagHighlight(paper.id, captured.text, captured.page);
+          if (t.tag) {
+            setHlTags((prev) => {
+              const next = new Map(prev);
+              next.set(hl.id, { tag: t.tag, icon: t.icon || '✨', fresh: true });
+              return next;
+            });
+            // Let the "fresh" animation play briefly
+            window.setTimeout(() => {
+              setHlTags((prev) => {
+                const next = new Map(prev);
+                const v = next.get(hl.id);
+                if (v) next.set(hl.id, { ...v, fresh: false });
+                return next;
+              });
+            }, 4500);
+          }
+        } catch { /* silent */ }
+      })();
+      // ✨ Trigger a ripple at the center of the first rect
+      const first = captured.position.rects[0];
+      if (first) {
+        const id = ++rippleIdRef.current;
+        setRipples((r) => [
+          ...r,
+          {
+            id,
+            page: captured.page,
+            x: (first.x + first.width / 2) * zoom,
+            y: (first.y + first.height / 2) * zoom,
+            color,
+          },
+        ]);
+        window.setTimeout(
+          () => setRipples((r) => r.filter((x) => x.id !== id)),
+          1500,
+        );
+      }
       return hl;
     } catch (e) {
       console.error('createHighlight failed', e);
@@ -329,6 +740,19 @@ export function PdfReader() {
         source: 'manual',
       });
       dispatch({ type: 'ADD_NOTE', note });
+      // Fire a note-fly orb from the highlight center toward notes panel
+      const firstRect = captured.position.rects[0];
+      const pageEl = getPageElement(captured.page);
+      if (firstRect && pageEl) {
+        const pageRect = pageEl.getBoundingClientRect();
+        window.dispatchEvent(new CustomEvent('note-fly', {
+          detail: {
+            x: pageRect.left + (firstRect.x + firstRect.width / 2) * zoom,
+            y: pageRect.top + (firstRect.y + firstRect.height / 2) * zoom,
+            color: COLOR_HEX[hl.color],
+          },
+        }));
+      }
     } catch (e) {
       console.error(e);
     }
@@ -446,7 +870,7 @@ export function PdfReader() {
   return (
     <div className="flex flex-col h-full">
       {/* Page nav bar */}
-      <div className="flex items-center gap-2 px-3 py-1 border-b bg-white dark:bg-gray-800 text-sm flex-shrink-0">
+      <div className="glass-panel flex items-center gap-2 px-3 py-1 border-b border-indigo-100/60 dark:border-indigo-900/40 text-sm flex-shrink-0">
         <button onClick={() => setShowToc((v) => !v)} title="目录"
           className={'px-1 rounded text-xs ' + (showToc ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-gray-100 text-gray-500')}>☰</button>
         <button onClick={() => setShowSearch((v) => !v)} title="搜索 (Ctrl+F)"
@@ -483,6 +907,21 @@ export function PdfReader() {
           className="px-1 hover:bg-gray-100 rounded">+</button>
         <button onClick={() => setZoom(1)} className="text-xs text-gray-500 hover:text-gray-700 ml-1">重置</button>
 
+        <div className="h-4 w-px bg-gray-200 mx-1" />
+        <button
+          onClick={() => paper && kbActions.toggleBookmark?.()}
+          disabled={!paper}
+          title={bookmarks.has(currentPage) ? '取消书签 (B)' : '添加书签 (B)'}
+          className={
+            'text-xs px-1.5 py-0.5 rounded transition-colors ' +
+            (bookmarks.has(currentPage)
+              ? 'text-fuchsia-500'
+              : 'text-gray-400 hover:text-fuchsia-500')
+          }
+        >
+          {bookmarks.has(currentPage) ? '🔖' : '🏷️'}
+        </button>
+
         {hlCounts.total > 0 && (<>
           <div className="h-4 w-px bg-gray-200 mx-1" />
           <span className="text-xs text-gray-400">高亮：</span>
@@ -517,24 +956,48 @@ export function PdfReader() {
           </div>
         )}
 
-      {/* PDF area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-gray-100 dark:bg-gray-900 py-4">
+      {/* PDF area (relative wrapper so the creature scrollbar stays pinned to the viewport) */}
+      <div className="relative flex-1 min-w-0">
+      <div ref={scrollRef} className="pdf-scroll absolute inset-0 overflow-y-auto py-6">
+        {/* Ambient firefly particles behind the pages */}
+        <Fireflies />
+        {/* Subtle star constellations drifting in and out */}
+        <Constellations />
+        {/* Reading progress bar (top of PDF area) */}
+        {pageCount > 0 && (
+          <div
+            className="reading-progress"
+            style={{ width: `${scrollProgress}%` }}
+            aria-hidden
+          />
+        )}
         <Document
           file={fileUrl}
+          options={PDF_OPTIONS}
           onLoadSuccess={(pdf) => setPageCount(pdf.numPages)}
           loading={<div className="text-center text-gray-500 pt-10">加载 PDF…</div>}
           error={<div className="text-center text-red-500 pt-10">PDF 加载失败</div>}
         >
+          <div className={prefs.twoPage ? 'pdf-stack-two' : undefined}>
           {Array.from({ length: pageCount }, (_, i) => i + 1).map((pageNum) => {
             const shouldRender = renderedPages.has(pageNum);
+            const isActive = pageNum === currentPage;
+            const isBookmarked = bookmarks.has(pageNum);
             return (
               <div
                 key={pageNum}
-                className="pdf-page"
+                className={'pdf-page' + (isActive ? ' pdf-page--active' : '')}
                 data-page-number={pageNum}
                 style={{ width: pageWidth, minHeight: heightFor(pageNum) }}
                 ref={getPageRef(pageNum)}
               >
+                {isBookmarked && (
+                  <div
+                    className="pdf-page-dogear"
+                    title={`取消书签 · 第 ${pageNum} 页`}
+                    onClick={(e) => { e.stopPropagation(); bookmarks.toggle(pageNum); }}
+                  />
+                )}
                 {shouldRender ? (
                   <Page
                     pageNumber={pageNum}
@@ -546,17 +1009,21 @@ export function PdfReader() {
                   />
                 ) : (
                   <div
-                    className="flex items-center justify-center text-xs text-gray-300 dark:text-gray-600"
+                    className="pdf-page-skeleton"
                     style={{ height: heightFor(pageNum) }}
                   >
-                    第 {pageNum} 页
+                    · {pageNum} ·
                   </div>
                 )}
                 {shouldRender && (highlightsByPage.get(pageNum) ?? []).map((h) =>
                   h.position.rects.map((r, idx) => (
                     <div
                       key={`${h.id}-${idx}`}
-                      className="highlight-rect"
+                      className={
+                        'highlight-rect'
+                        + (aiExplainedHighlights.has(h.id) ? ' highlight-rect--ai' : '')
+                        + (pingedHlId === h.id ? ' highlight-rect--ping' : '')
+                      }
                       data-hl={h.id}
                       style={{
                         left: r.x * zoom,
@@ -568,13 +1035,126 @@ export function PdfReader() {
                         cursor: 'pointer',
                         pointerEvents: 'auto',
                       }}
+                      onMouseEnter={(ev) => {
+                        if (hlHoverTimer.current) window.clearTimeout(hlHoverTimer.current);
+                        const target = ev.currentTarget;
+                        const rect = target.getBoundingClientRect();
+                        hlHoverTimer.current = window.setTimeout(() => {
+                          setHlHover({
+                            highlight: h,
+                            x: rect.left + rect.width / 2,
+                            y: rect.top,
+                          });
+                        }, 300);
+                      }}
+                      onMouseLeave={() => {
+                        if (hlHoverTimer.current) window.clearTimeout(hlHoverTimer.current);
+                        setHlHover(null);
+                      }}
                     />
                   )),
                 )}
+                {/* #26 AR figure labels — floats next to the figure caption */}
+                {shouldRender && figures.filter((f) => f.page === pageNum && f.insight && f.caption_bbox && f.caption_bbox.length >= 4).map((f, idx) => {
+                  const [cx0, cy0] = f.caption_bbox as number[];
+                  // PDF coords → CSS px (same scale as pageWidth / native)
+                  // Heuristic: pageWidth represents the native page width in CSS px at zoom=1,
+                  // multiply by zoom for current display. PDF points map: 1pt ≈ 1.33px @ 72dpi but
+                  // we normalize to pageWidth / PDF page width ratio. Page native width in PDF points
+                  // is stored via `setPageHeight` only (no width). Fallback estimate: assume A4 612pt.
+                  const pdfPageWidthPts = 612; // fallback; if known we'd read from <Page>
+                  const scale = (pageWidth / pdfPageWidthPts) * 1;
+                  return (
+                    <div
+                      key={`ins-${pageNum}-${f.number}-${idx}`}
+                      className={'figure-ar-label figure-ar-label--' + f.kind}
+                      style={{
+                        left: Math.max(4, cx0 * scale - 10),
+                        top: Math.max(4, cy0 * scale - 26),
+                      }}
+                      title={f.caption}
+                    >
+                      <span className="figure-ar-icon">{f.kind === 'figure' ? '💡' : '📊'}</span>
+                      <span className="figure-ar-insight">{f.insight}</span>
+                    </div>
+                  );
+                })}
+                {/* ✨ AI tag badges on first rect of each tagged highlight */}
+                {shouldRender && (highlightsByPage.get(pageNum) ?? []).map((h) => {
+                  const t = hlTags.get(h.id);
+                  if (!t) return null;
+                  const r0 = h.position.rects[0];
+                  if (!r0) return null;
+                  return (
+                    <div
+                      key={`tag-${h.id}`}
+                      className={'hl-ai-tag' + (t.fresh ? ' hl-ai-tag--fresh' : '')}
+                      style={{
+                        left: (r0.x + r0.width) * zoom + 6,
+                        top: r0.y * zoom - 4,
+                      }}
+                      title={`AI 标签：${t.tag}`}
+                    >
+                      <span>{t.icon}</span>
+                      <span className="hl-ai-tag-label">{t.tag}</span>
+                    </div>
+                  );
+                })}
+                {/* Ripples for newly-created highlights (this page only) */}
+                {ripples.filter((rp) => rp.page === pageNum).map((rp) => (
+                  <div
+                    key={rp.id}
+                    className="hl-ripple"
+                    style={{
+                      left: rp.x,
+                      top: rp.y,
+                      background: `radial-gradient(circle, ${COLOR_HEX[rp.color]} 0%, transparent 70%)`,
+                    }}
+                  />
+                ))}
               </div>
             );
           })}
+          </div>
         </Document>
+      </div>
+      {/* Draggable creature scrollbar — pinned to the viewport */}
+      {/* #5 Edge fades so pages blend into the atmospheric backdrop */}
+      <div className="pdf-edge-fade pdf-edge-fade-top" aria-hidden />
+      <div className="pdf-edge-fade pdf-edge-fade-bottom" aria-hidden />
+      <CreatureScrollbar
+        scrollRef={scrollRef}
+        ticks={outlineTicks}
+        overrideEmotion={creatureMood}
+        accessory={accessory}
+        streak={streak}
+        level={mosslingLevel}
+        heatmap={heatmap}
+        totalPages={pageCount}
+      />
+      {/* #13 Hover-to-translate words in the PDF text layer */}
+      <HoverTranslate scrollRef={scrollRef} enabled={!!paper && aiPrefs.isEnabled('hover_translate')} />
+
+      {/* #10 Opening ring burst — fires on every paper open */}
+      {openingRing > 0 && (
+        <div key={openingRing} className="pointer-events-none absolute inset-0 z-20">
+          <div className="paper-open-ring ring-1" />
+          <div className="paper-open-ring ring-2" />
+          <div className="paper-open-ring ring-3" />
+        </div>
+      )}
+      {/* Note-fly orbs: animate from saved highlight position toward the notes panel */}
+      {noteFlies.map((f) => (
+        <div
+          key={f.id}
+          className="note-fly-orb"
+          style={{
+            left: f.x,
+            top: f.y,
+            background: `radial-gradient(circle, ${f.color}, transparent 70%)`,
+          }}
+        />
+      ))}
       </div>
       {/* Highlight minimap */}
       {pageCount > 1 && state.highlights.length > 0 && (
@@ -593,6 +1173,101 @@ export function PdfReader() {
       )}
       {hlMenu && (
         <ContextMenu x={hlMenu.x} y={hlMenu.y} items={buildHlMenuItems(hlMenu.highlight)} onClose={() => setHlMenu(null)} />
+      )}
+
+      {/* Floating selection mini-toolbar */}
+      {selMenu && (
+        <SelectionToolbar
+          x={selMenu.x}
+          y={selMenu.y}
+          onPickColor={async (c) => {
+            const hl = await saveHighlight(selMenu.captured, c);
+            if (c === 'purple' && hl) {
+              await aiStream('/ai/explain', {
+                paper_id: paper!.id, highlight_id: hl.id,
+                text: selMenu.captured.text, page: selMenu.captured.page, level: 'simple',
+              }, `请解释：${selMenu.captured.text.slice(0, 80)}`, hl);
+            }
+            setSelMenu(null);
+          }}
+          onExplain={async () => {
+            const hl = await saveHighlight(selMenu.captured);
+            if (hl) {
+              await aiStream('/ai/explain', {
+                paper_id: paper!.id, highlight_id: hl.id,
+                text: selMenu.captured.text, page: selMenu.captured.page, level: 'simple',
+              }, `请解释：${selMenu.captured.text.slice(0, 80)}`, hl);
+            }
+            setSelMenu(null);
+          }}
+          onTranslate={async () => {
+            await aiStream('/ai/translate', {
+              paper_id: paper!.id, text: selMenu.captured.text,
+            }, `翻译：${selMenu.captured.text.slice(0, 80)}`);
+            setSelMenu(null);
+          }}
+          onAddNote={() => {
+            setNoteInput({ captured: selMenu.captured });
+            setSelMenu(null);
+          }}
+          onClose={() => setSelMenu(null)}
+        />
+      )}
+
+      {/* Floating page indicator (fades in during scroll, fades out when idle) */}
+      <div
+        className={
+          'fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-4 py-1.5 rounded-full text-sm font-medium pointer-events-none select-none ' +
+          'bg-gradient-to-r from-indigo-600/90 via-fuchsia-600/90 to-rose-500/90 text-white ' +
+          'backdrop-blur shadow-[0_8px_28px_rgba(168,85,247,0.35)] ' +
+          'transition-all duration-300 ease-out ' +
+          (showPageIndicator && pageCount > 0
+            ? 'opacity-100 translate-y-0'
+            : 'opacity-0 translate-y-2')
+        }
+      >
+        <span className="tabular-nums">{currentPage}</span>
+        <span className="mx-1 opacity-60">/</span>
+        <span className="tabular-nums opacity-80">{pageCount}</span>
+      </div>
+
+      {/* #16 Highlight hover preview */}
+      {hlHover && (
+        <HighlightPreview
+          highlight={hlHover.highlight}
+          notes={state.notes}
+          x={hlHover.x}
+          y={hlHover.y}
+        />
+      )}
+
+      {/* #15 Completion celebration */}
+      {celebrating && <CompletionCelebration onDone={() => setCelebrating(false)} />}
+
+      {/* 🧠 Mossling-side gentle offer after 90s on the same page */}
+      {confusionOffer && (
+        <div className="confusion-offer" role="alert">
+          <div className="confusion-offer-content">
+            <span className="text-base">🌿</span>
+            <div className="flex-1">
+              <div className="font-medium text-sm">这页有点复杂？</div>
+              <div className="text-xs opacity-80">让苔苔把它拆成 3 点讲给你</div>
+            </div>
+            <button onClick={acceptConfusionHelp} className="confusion-btn confusion-btn-accept">好的</button>
+            <button onClick={() => setConfusionOffer(null)} className="confusion-btn confusion-btn-dismiss">稍后</button>
+          </div>
+        </div>
+      )}
+
+      {/* Floating "back to top" */}
+      {showBackToTop && (
+        <button
+          onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="float-btn fixed bottom-6 right-24 z-40 w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-white shadow-[0_6px_20px_rgba(168,85,247,0.45)] hover:shadow-[0_8px_26px_rgba(168,85,247,0.6)] hover:scale-110 active:scale-95 transition-transform flex items-center justify-center"
+          title="回到顶部"
+        >
+          ↑
+        </button>
       )}
 
       {/* Citation popover (from clicking [n] inside PDF) */}

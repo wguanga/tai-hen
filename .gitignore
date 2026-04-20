@@ -1,45 +1,31 @@
-# === Python ===
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-venv/
-env/
-.venv/
-*.egg-info/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
+# ============================================================================
+# Inverted .gitignore (whitelist mode)
+# ----------------------------------------------------------------------------
+# Everything is ignored by default; only files that are explicitly listed
+# below (or in a nested .gitignore inside an un-ignored directory) are
+# tracked. This keeps the repo clean of generated / user-local / binary noise
+# and requires a conscious decision for any new artefact to enter history.
+#
+# How to add something new:
+#   - At the top level: add a `!name` line here.
+#   - Inside backend/frontend/electron/docs: edit that directory's own
+#     .gitignore — each subtree manages its own whitelist.
+# ============================================================================
 
-# === Node / Frontend ===
-node_modules/
-dist/
-dist-ssr/
-*.local
-.vite/
+# Start by ignoring every file at the root.
+*
 
-# === Electron build output ===
-release/
-out/
+# Essential root files
+!.gitignore
+!README.md
+!CLAUDE.md
+!package.json
+!package-lock.json
 
-# === Runtime data (用户数据，不入库) ===
-data/
-*.db
-*.db-wal
-*.db-shm
-
-# === 日志 ===
-*.log
-logs/
-
-# === IDE / OS ===
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-*.swp
-*.swo
-
-# === Claude Code 本地工作区（项目文档在 docs/ 下）===
-.claude/
+# Managed directories — each has its own nested .gitignore.
+# Un-ignoring the directory here lets git descend into it; the per-directory
+# .gitignore then decides which files inside to track.
+!backend/
+!frontend/
+!electron/
+!docs/

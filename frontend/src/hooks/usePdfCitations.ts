@@ -19,11 +19,19 @@ export function usePdfCitations(
     const processLayer = (layer: Element) => {
       const spans = layer.querySelectorAll('span');
       spans.forEach((span) => {
+        const el = span as HTMLElement;
         // Skip already-processed
-        if ((span as HTMLElement).dataset.citeProcessed === '1') return;
-        // Skip spans that already contain nested elements (we inject cite-mark spans)
+        if (el.dataset.citeProcessed === '1') return;
+        // CRITICAL: skip cite-marks we injected ourselves, otherwise the
+        // observer sees our own insertion, re-wraps [n] inside cite-mark,
+        // triggers another mutation, etc. — infinite microtask loop freezes UI.
+        if (el.classList.contains('cite-mark')) {
+          el.dataset.citeProcessed = '1';
+          return;
+        }
+        // Skip spans that already contain a cite-mark (already handled)
         if (span.querySelector('.cite-mark')) {
-          (span as HTMLElement).dataset.citeProcessed = '1';
+          el.dataset.citeProcessed = '1';
           return;
         }
         const text = span.textContent || '';
@@ -39,7 +47,11 @@ export function usePdfCitations(
           if (!hasAny) continue;
           any = true;
           html += escapeHtml(text.slice(lastIdx, m.index));
-          html += `<span class="cite-mark" data-cite-nums="${m[1]}" style="color:#4f46e5;border-bottom:1px dotted #4f46e5;cursor:pointer;pointer-events:auto;">${escapeHtml(m[0])}</span>`;
+          // Don't override the inherited `color: transparent` from react-pdf's
+          // text layer — otherwise our overlay renders [n] ON TOP of the canvas
+          // pixel, causing visible ghosting. Leave text transparent; only draw
+          // a dotted underline + clickable box positioned to match.
+          html += `<span class="cite-mark" data-cite-nums="${m[1]}" style="border-bottom:1px dotted #4f46e5;cursor:pointer;pointer-events:auto;background:rgba(79,70,229,0.08);border-radius:2px;">${escapeHtml(m[0])}</span>`;
           lastIdx = m.index + m[0].length;
         }
         if (any) {

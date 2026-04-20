@@ -1,0 +1,26 @@
+# Frontend — inverted whitelist (inherited from root)
+# ---------------------------------------------------
+# Excluded automatically (by the leading `*` without a matching `!`):
+#   - node_modules/      (npm deps)
+#   - dist/              (Vite build output)
+#   - tsconfig.tsbuildinfo  (tsc incremental cache)
+#   - public/cmaps/, public/standard_fonts/  (postinstall-populated)
+
+*
+
+!.gitignore
+
+# Root-level config files
+!package.json
+!package-lock.json
+!tsconfig.json
+!tailwind.config.js
+!postcss.config.js
+!vite.config.ts
+!vitest.config.ts
+!index.html
+
+# Source directories (each may have its own nested .gitignore)
+!src/
+!scripts/
+!public/
