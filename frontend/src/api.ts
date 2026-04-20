@@ -8,6 +8,15 @@ import type {
   Paper,
 } from './types';
 
+export interface ArxivHit {
+  arxiv_id: string;
+  title: string;
+  authors: string[];
+  abs_url: string;
+  pdf_url: string;
+  abstract: string;
+}
+
 export const BASE = 'http://127.0.0.1:8000';
 
 export class ApiError extends Error {
@@ -50,6 +59,11 @@ export const api = {
     request<Paper>('/papers/import_url', {
       method: 'POST',
       body: JSON.stringify({ url }),
+    }),
+  searchArxiv: (ref_text: string, max_results = 3) =>
+    request<{ items: ArxivHit[] }>('/papers/search_arxiv', {
+      method: 'POST',
+      body: JSON.stringify({ ref_text, max_results }),
     }),
   deletePaper: (id: string) =>
     request<void>(`/papers/${id}`, { method: 'DELETE' }),

@@ -37,6 +37,7 @@ import { useAIPrefs } from '../hooks/useAIPrefs';
 import { useResumeReminder } from '../hooks/useResumeReminder';
 import { useGlossaryHighlight } from '../hooks/useGlossaryHighlight';
 import { GlossaryHover } from './GlossaryHover';
+import { CitationPopover } from './CitationPopover';
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -1377,25 +1378,13 @@ export function PdfReader() {
 
       {/* Citation popover (from clicking [n] inside PDF) */}
       {citePopover && (
-        <div
-          className="fixed z-[55] bg-gray-900 text-white text-xs rounded shadow-2xl p-2 w-80"
-          style={{
-            left: Math.min(window.innerWidth - 330, citePopover.x),
-            top: Math.min(window.innerHeight - 200, citePopover.y + 16),
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center justify-between mb-1">
-            <span className="font-medium">📚 参考文献</span>
-            <button onClick={() => setCitePopover(null)} className="text-gray-400 hover:text-white">✕</button>
-          </div>
-          {citePopover.nums.map((n) => (
-            <div key={n} className="mb-1 last:mb-0 leading-relaxed">
-              <span className="text-indigo-300 mr-1">[{n}]</span>
-              {refIndex.get(n) ?? <span className="text-gray-400 italic">未在参考文献中找到</span>}
-            </div>
-          ))}
-        </div>
+        <CitationPopover
+          nums={citePopover.nums}
+          x={citePopover.x}
+          y={citePopover.y}
+          refIndex={refIndex}
+          onClose={() => setCitePopover(null)}
+        />
       )}
 
       {/* Bilingual popover */}

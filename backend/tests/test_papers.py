@@ -132,6 +132,30 @@ class TestOutlineAndSearch:
         assert r.status_code == 422  # FastAPI validation
 
 
+class TestArxivSearch:
+    def test_title_hint_strips_index_and_authors(self):
+        from services.arxiv_search import _extract_title_hint
+
+        ref = "[12] Vaswani, A., Shazeer, N., Parmar, N. Attention is all you need. NeurIPS 2017."
+        hint = _extract_title_hint(ref)
+        # Leading "[12]" and the authors chunk before the first period are dropped
+        assert "[12]" not in hint
+        assert hint.startswith("Attention is all you need") or "Attention is all you need" in hint
+
+    def test_search_arxiv_empty_query_short_circuits(self, monkeypatch):
+        # Don't hit the network when the extracted hint is too short
+        import asyncio
+
+        from services.arxiv_search import search_arxiv
+
+        async def fail(*a, **k):
+            raise AssertionError("should not call httpx for short queries")
+
+        monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: fail())
+        result = asyncio.run(search_arxiv("x"))
+        assert result == []
+
+
 class TestCascadeDelete:
     def test_delete_paper_cascades_highlights(self, client, uploaded_paper):
         pid = uploaded_paper["id"]

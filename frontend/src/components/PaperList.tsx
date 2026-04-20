@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useAppStore } from '../store/app-store';
+import { useOpenPaper } from '../hooks/useOpenPaper';
 import { useToast } from './Toast';
 import { ReadingRing } from './ReadingRing';
 
@@ -19,6 +20,7 @@ function readingPercentFor(paperId: string, totalPages: number): number {
 export function PaperList() {
   const { state, dispatch } = useAppStore();
   const { toast } = useToast();
+  const openPaper = useOpenPaper();
   const [search, setSearch] = useState('');
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [editingTagsFor, setEditingTagsFor] = useState<string | null>(null);
@@ -36,23 +38,6 @@ export function PaperList() {
     })();
     return () => { cancelled = true; };
   }, [dispatch]);
-
-  async function openPaper(id: string) {
-    try {
-      const [paper, hl, notes] = await Promise.all([
-        api.getPaper(id),
-        api.listHighlights(id),
-        api.listNotes(id),
-      ]);
-      dispatch({ type: 'OPEN_PAPER', paper, highlights: hl.items, notes: notes.items });
-      // Fire-and-forget references fetch
-      api.getReferences(id)
-        .then((r) => dispatch({ type: 'SET_REFERENCES', references: r.items }))
-        .catch(() => {});
-    } catch (e) {
-      console.error(e);
-    }
-  }
 
   async function remove(id: string) {
     if (!confirm('删除该论文及所有高亮、笔记？此操作不可恢复。')) return;
@@ -143,7 +128,7 @@ export function PaperList() {
           return (
             <div
               key={p.id}
-              onClick={() => !editing && openPaper(p.id)}
+              onClick={() => !editing && openPaper(p.id).catch(() => toast('打开失败', 'error'))}
               className={
                 'card-lift group px-3 py-2 border-b border-indigo-50/80 dark:border-indigo-900/30 cursor-pointer relative ' +
                 (isActive

@@ -54,6 +54,21 @@ async def import_url(body: _UrlImportBody, session: Session = Depends(get_sessio
     return _to_read(paper)
 
 
+class _ArxivSearchBody(__import__("pydantic").BaseModel):
+    ref_text: str
+    max_results: int = 3
+
+
+@router.post("/search_arxiv")
+async def search_arxiv_endpoint(body: _ArxivSearchBody):
+    """Search arXiv using a free-text reference string; returns top candidates
+    with arxiv_id / title / authors / pdf_url so the frontend can offer
+    one-click import."""
+    from services.arxiv_search import search_arxiv
+    hits = await search_arxiv(body.ref_text, max_results=max(1, min(body.max_results, 5)))
+    return {"items": hits}
+
+
 @router.get("", response_model=PaperList)
 def list_papers(
     limit: int = Query(50, ge=1, le=200),

@@ -16,6 +16,7 @@ import { ToastProvider, useToast } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CommandPalette } from './components/CommandPalette';
 import { ShortcutHelp } from './components/ShortcutHelp';
+import { PaperTabs } from './components/PaperTabs';
 import { MilestoneToastHost } from './components/MilestoneToast';
 import { MilestonesWall } from './components/MilestonesWall';
 import { NotePath } from './components/NotePath';
@@ -198,10 +199,13 @@ function Layout() {
         {!focusMode && !leftCollapsed && (
           <ErrorBoundary label="LeftSidebar"><LeftSidebar /></ErrorBoundary>
         )}
-        <div className="flex-1 min-w-0">
-          <ErrorBoundary label="PdfReader">
-            <PdfReader />
-          </ErrorBoundary>
+        <div className="flex-1 min-w-0 flex flex-col">
+          {!focusMode && <PaperTabs />}
+          <div className="flex-1 min-h-0">
+            <ErrorBoundary label="PdfReader">
+              <PdfReader />
+            </ErrorBoundary>
+          </div>
         </div>
         {!focusMode && !rightCollapsed && (
           <ErrorBoundary label="RightPanel"><RightPanel /></ErrorBoundary>
