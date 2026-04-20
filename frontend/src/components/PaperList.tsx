@@ -53,11 +53,16 @@ export function PaperList() {
 
   async function commitTags(paperId: string) {
     const tags = tagDraft.split(/[,，\s]+/).map((t) => t.trim()).filter(Boolean);
+    const prev = state.papers.find((p) => p.id === paperId)?.tags ?? [];
+    const added = tags.filter((t) => !prev.includes(t)).length;
     try {
       const updated = await api.updatePaper(paperId, { tags });
       dispatch({ type: 'ADD_PAPER', paper: updated });
       if (state.currentPaper?.id === paperId) {
         dispatch({ type: 'OPEN_PAPER', paper: updated, highlights: state.highlights, notes: state.notes });
+      }
+      if (added > 0) {
+        window.dispatchEvent(new CustomEvent('app-event', { detail: { type: 'tag-added', count: added } }));
       }
       setEditingTagsFor(null);
       toast('标签已更新', 'success');

@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { MILESTONES } from '../hooks/useAppStats';
+import { useEffect, useMemo } from 'react';
+import { MILESTONES, type MilestoneCategory } from '../hooks/useAppStats';
 
 interface Props {
   unlocked: Set<string>;
@@ -7,9 +7,31 @@ interface Props {
   xp: number;
   prevAt: number;
   nextAt: number;
-  stats: { papersOpened: number; papersFinished: number; highlightsCreated: number; notesCreated: number; aiInteractions: number; streak: number };
+  stats: {
+    papersOpened: number;
+    papersFinished: number;
+    highlightsCreated: number;
+    notesCreated: number;
+    aiInteractions: number;
+    streak: number;
+    exportsCount?: number;
+    citationsClicked?: number;
+    compareUsed?: number;
+    tagsAdded?: number;
+    cmdPaletteUsed?: number;
+    colorsUsedCount?: number;
+    nightSessions?: number;
+    dawnSessions?: number;
+    totalSessions?: number;
+  };
   onClose: () => void;
 }
+
+const CATEGORY_ORDER: MilestoneCategory[] = ['阅读', '标注', '笔记', 'AI', '坚持', '苔苔', '探索', '时辰', '彩蛋'];
+const CATEGORY_EMOJI: Record<MilestoneCategory, string> = {
+  阅读: '📖', 标注: '🖍️', 笔记: '✏️', AI: '🤖',
+  坚持: '🔥', 苔苔: '🌿', 探索: '🧭', 时辰: '🌙', 彩蛋: '🎁',
+};
 
 export function MilestonesWall({ unlocked, level, xp, prevAt, nextAt, stats, onClose }: Props) {
   useEffect(() => {
@@ -22,6 +44,15 @@ export function MilestonesWall({ unlocked, level, xp, prevAt, nextAt, stats, onC
 
   const earnedCount = [...unlocked].filter((id) => MILESTONES.some((m) => m.id === id)).length;
   const pct = Math.min(100, Math.max(0, ((xp - prevAt) / Math.max(1, nextAt - prevAt)) * 100));
+  const grouped = useMemo(() => {
+    const map = new Map<MilestoneCategory, typeof MILESTONES>();
+    for (const m of MILESTONES) {
+      const arr = map.get(m.category) ?? [];
+      arr.push(m);
+      map.set(m.category, arr);
+    }
+    return CATEGORY_ORDER.filter((c) => map.has(c)).map((c) => ({ cat: c, items: map.get(c)! }));
+  }, []);
 
   return (
     <div
@@ -80,38 +111,58 @@ export function MilestonesWall({ unlocked, level, xp, prevAt, nextAt, stats, onC
           <Stat label="笔记" value={stats.notesCreated} />
           <Stat label="AI" value={stats.aiInteractions} />
           <Stat label="连击" value={stats.streak} suffix="天" />
+          <Stat label="导出" value={stats.exportsCount ?? 0} />
+          <Stat label="引用" value={stats.citationsClicked ?? 0} />
+          <Stat label="对比" value={stats.compareUsed ?? 0} />
+          <Stat label="标签" value={stats.tagsAdded ?? 0} />
+          <Stat label="⌘K" value={stats.cmdPaletteUsed ?? 0} />
+          <Stat label="夜读" value={stats.nightSessions ?? 0} />
         </div>
 
-        {/* Badges grid */}
+        {/* Badges grid, grouped by category */}
         <div className="px-5 py-4 overflow-y-auto">
           <div className="text-xs text-gray-500 dark:text-gray-400 mb-3">
             已获得 <span className="font-semibold text-fuchsia-600 dark:text-fuchsia-300">{earnedCount}</span> / {MILESTONES.length} 枚
           </div>
-          <div className="grid grid-cols-4 gap-3">
-            {MILESTONES.map((m) => {
-              const ok = unlocked.has(m.id);
-              return (
-                <div
-                  key={m.id}
-                  className={
-                    'rounded-xl p-3 text-center transition-all ' +
-                    (ok
-                      ? 'bg-gradient-to-br from-indigo-50 via-fuchsia-50 to-rose-50 dark:from-indigo-900/40 dark:via-fuchsia-900/40 dark:to-rose-900/30 border border-fuchsia-200 dark:border-fuchsia-800/60 shadow-[0_2px_10px_rgba(236,72,153,.15)]'
-                      : 'bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 opacity-60 grayscale')
-                  }
-                  title={m.desc}
-                >
-                  <div className="text-3xl mb-1">{ok ? m.emoji : '🔒'}</div>
-                  <div className={'text-xs font-semibold ' + (ok ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400')}>
-                    {m.name}
-                  </div>
-                  <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-tight">
-                    {m.desc}
-                  </div>
+          {grouped.map(({ cat, items }) => {
+            const earnedInCat = items.filter((m) => unlocked.has(m.id)).length;
+            return (
+              <div key={cat} className="mb-5 last:mb-0">
+                <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wider">
+                  <span className="text-base">{CATEGORY_EMOJI[cat]}</span>
+                  <span>{cat}</span>
+                  <span className="text-[10px] text-gray-400 font-normal normal-case">
+                    {earnedInCat} / {items.length}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
+                <div className="grid grid-cols-4 gap-3">
+                  {items.map((m) => {
+                    const ok = unlocked.has(m.id);
+                    return (
+                      <div
+                        key={m.id}
+                        className={
+                          'rounded-xl p-3 text-center transition-all ' +
+                          (ok
+                            ? 'bg-gradient-to-br from-indigo-50 via-fuchsia-50 to-rose-50 dark:from-indigo-900/40 dark:via-fuchsia-900/40 dark:to-rose-900/30 border border-fuchsia-200 dark:border-fuchsia-800/60 shadow-[0_2px_10px_rgba(236,72,153,.15)]'
+                            : 'bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 opacity-60 grayscale')
+                        }
+                        title={m.desc}
+                      >
+                        <div className="text-3xl mb-1">{ok ? m.emoji : '🔒'}</div>
+                        <div className={'text-xs font-semibold ' + (ok ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400')}>
+                          {m.name}
+                        </div>
+                        <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-tight">
+                          {m.desc}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

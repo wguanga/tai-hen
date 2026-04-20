@@ -126,6 +126,7 @@ export function NotesPanel() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      window.dispatchEvent(new CustomEvent('app-event', { detail: { type: 'export' } }));
       toast('导出成功', 'success');
     } catch (e) {
       console.error(e);

@@ -116,6 +116,7 @@ function Layout() {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();
         setCmdPaletteOpen(true);
+        window.dispatchEvent(new CustomEvent('app-event', { detail: { type: 'cmd-palette' } }));
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
@@ -181,7 +182,7 @@ function Layout() {
           onToggleDark={toggleDark}
           focusMode={focusMode}
           onToggleFocus={() => setFocusMode((v) => !v)}
-          onOpenCompare={() => setCompareOpen(true)}
+          onOpenCompare={() => { setCompareOpen(true); window.dispatchEvent(new CustomEvent('app-event', { detail: { type: 'compare-open' } })); }}
           onOpenGlossary={() => setGlossaryOpen(true)}
           config={config}
           prefs={prefs}

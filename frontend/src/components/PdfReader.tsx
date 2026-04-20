@@ -643,6 +643,7 @@ export function PdfReader() {
           setMenu(null);
           setHlMenu(null);
           setCitePopover({ nums, x: e.clientX, y: e.clientY });
+          window.dispatchEvent(new CustomEvent('app-event', { detail: { type: 'citation-click' } }));
           return;
         }
       }
