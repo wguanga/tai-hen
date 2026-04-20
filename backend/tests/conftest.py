@@ -35,12 +35,14 @@ def _reload_backend_modules():
         "repositories.note_repo",
         "repositories.chat_repo",
         "repositories.glossary_repo",
+        "repositories.folder_repo",
         "routers.papers",
         "routers.highlights",
         "routers.notes",
         "routers.ai",
         "routers.search",
         "routers.glossary",
+        "routers.folders",
         "routers.config",
         "deps",
     ):
@@ -95,6 +97,20 @@ def sample_pdf_path(tmp_path, sample_pdf_bytes) -> str:
     p = tmp_path / "sample.pdf"
     p.write_bytes(sample_pdf_bytes)
     return str(p)
+
+
+@pytest.fixture
+def sample_pdf_bytes_factory():
+    """Produce distinct sample PDFs (different bytes → different SHA256) on demand."""
+    def _make(title: str = "Another Paper", author: str = "Z. Author") -> bytes:
+        doc = fitz.open()
+        doc.set_metadata({"title": title, "author": author, "creationDate": "D:20230515000000Z"})
+        page = doc.new_page()
+        page.insert_text((72, 72), f"{title}\n{author}\nBody text.", fontsize=12)
+        data = doc.tobytes()
+        doc.close()
+        return data
+    return _make
 
 
 @pytest.fixture

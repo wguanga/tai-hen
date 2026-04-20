@@ -4,6 +4,8 @@ import { useAppStore } from '../store/app-store';
 import { useOpenPaper } from '../hooks/useOpenPaper';
 import { useToast } from './Toast';
 import { ReadingRing } from './ReadingRing';
+import { FolderChipsBar } from './FolderChipsBar';
+import { MoveToFolderMenu } from './MoveToFolderMenu';
 
 function readingPercentFor(paperId: string, totalPages: number): number {
   if (totalPages <= 0) return 0;
@@ -25,15 +27,19 @@ export function PaperList() {
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [editingTagsFor, setEditingTagsFor] = useState<string | null>(null);
   const [tagDraft, setTagDraft] = useState('');
+  const [folderFilter, setFolderFilter] = useState<string | null>(null);
+  const [moveMenu, setMoveMenu] = useState<{ paperId: string; currentFolderId: string | null | undefined; x: number; y: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await api.listPapers();
-        if (!cancelled) dispatch({ type: 'SET_PAPERS', papers: res.items });
+        const [papers, folders] = await Promise.all([api.listPapers(), api.listFolders()]);
+        if (cancelled) return;
+        dispatch({ type: 'SET_PAPERS', papers: papers.items });
+        dispatch({ type: 'SET_FOLDERS', folders: folders.items });
       } catch (e) {
-        console.error('listPapers failed', e);
+        console.error('list failed', e);
       }
     })();
     return () => { cancelled = true; };
@@ -84,6 +90,8 @@ export function PaperList() {
 
   const filtered = useMemo(() => {
     return state.papers.filter((p) => {
+      if (folderFilter === 'unfiled' && p.folder_id) return false;
+      if (folderFilter && folderFilter !== 'unfiled' && p.folder_id !== folderFilter) return false;
       if (tagFilter && !(p.tags || []).includes(tagFilter)) return false;
       if (search.trim()) {
         const q = search.toLowerCase();
@@ -92,10 +100,11 @@ export function PaperList() {
       }
       return true;
     });
-  }, [state.papers, search, tagFilter]);
+  }, [state.papers, search, tagFilter, folderFilter]);
 
   return (
     <div className="h-full flex flex-col">
+      <FolderChipsBar selected={folderFilter} onSelect={setFolderFilter} />
       <div className="px-3 py-2 border-b border-indigo-100/60 dark:border-indigo-900/40">
         <input
           value={search}
@@ -189,19 +198,41 @@ export function PaperList() {
                   >
                     <ReadingRing percent={readingPercentFor(p.id, p.total_pages)} />
                   </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); remove(p.id); }}
-                    className="opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-red-500"
-                    title="删除"
-                  >
-                    ✕
-                  </button>
+                  <div className="flex gap-0.5">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setMoveMenu({ paperId: p.id, currentFolderId: p.folder_id, x: rect.right, y: rect.bottom + 4 });
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-indigo-500"
+                      title="移动到分组"
+                    >
+                      📁
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); remove(p.id); }}
+                      className="opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-red-500"
+                      title="删除"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           );
         })}
       </div>
+      {moveMenu && (
+        <MoveToFolderMenu
+          paperId={moveMenu.paperId}
+          currentFolderId={moveMenu.currentFolderId}
+          x={moveMenu.x}
+          y={moveMenu.y}
+          onClose={() => setMoveMenu(null)}
+        />
+      )}
     </div>
   );
 }

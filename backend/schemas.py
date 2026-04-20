@@ -17,6 +17,7 @@ class PaperRead(BaseModel):
     total_pages: int
     file_size: Optional[int] = None
     tags: list[str] = []
+    folder_id: Optional[str] = None
     created_at: str
 
 
@@ -28,6 +29,34 @@ class PaperList(BaseModel):
 class PaperUpdate(BaseModel):
     tags: Optional[list[str]] = None
     title: Optional[str] = None
+    # `folder_id=None` (missing in PATCH body) → no change;
+    # `folder_id=""` / explicit null → unset (move to "未分组").
+    folder_id: Optional[str] = None
+
+
+class FolderCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    color: Optional[str] = None
+    sort_order: int = 0
+
+
+class FolderUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    color: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class FolderRead(BaseModel):
+    id: str
+    name: str
+    color: Optional[str] = None
+    sort_order: int
+    paper_count: int
+    created_at: str
+
+
+class FolderList(BaseModel):
+    items: list[FolderRead]
 
 
 class HighlightRectIn(BaseModel):

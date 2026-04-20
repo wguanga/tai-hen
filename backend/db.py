@@ -47,6 +47,19 @@ MIGRATIONS: dict[int, list[str]] = {
         "CREATE INDEX IF NOT EXISTS idx_glossary_term ON glossary(term)",
         "CREATE INDEX IF NOT EXISTS idx_glossary_paper ON glossary(paper_id)",
     ],
+    4: [
+        # User-defined folders for grouping papers. One folder per paper
+        # (folder_id is nullable: NULL = "未分组").
+        "CREATE TABLE IF NOT EXISTS folders ("
+        "  id TEXT PRIMARY KEY,"
+        "  name TEXT NOT NULL,"
+        "  color TEXT,"
+        "  sort_order INTEGER NOT NULL DEFAULT 0,"
+        "  created_at TEXT NOT NULL"
+        ")",
+        "ALTER TABLE papers ADD COLUMN folder_id TEXT REFERENCES folders(id)",
+        "CREATE INDEX IF NOT EXISTS idx_papers_folder ON papers(folder_id)",
+    ],
 }
 
 

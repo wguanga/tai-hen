@@ -1,5 +1,6 @@
 import type {
   AppConfig,
+  Folder,
   Highlight,
   HighlightColor,
   HighlightPosition,
@@ -67,11 +68,20 @@ export const api = {
     }),
   deletePaper: (id: string) =>
     request<void>(`/papers/${id}`, { method: 'DELETE' }),
-  updatePaper: (id: string, patch: { tags?: string[]; title?: string }) =>
+  updatePaper: (id: string, patch: { tags?: string[]; title?: string; folder_id?: string | null }) =>
     request<Paper>(`/papers/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
   listAllTags: () => request<{ items: string[] }>('/papers/tags'),
   listPapersByTag: (tag: string) =>
     request<{ items: Paper[]; total: number }>(`/papers?tag=${encodeURIComponent(tag)}`),
+
+  // ── Folders ──────────────────────────────────────────────
+  listFolders: () => request<{ items: Folder[] }>('/folders'),
+  createFolder: (patch: { name: string; color?: string | null; sort_order?: number }) =>
+    request<Folder>('/folders', { method: 'POST', body: JSON.stringify(patch) }),
+  updateFolder: (id: string, patch: { name?: string; color?: string | null; sort_order?: number }) =>
+    request<Folder>(`/folders/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+  deleteFolder: (id: string) =>
+    request<void>(`/folders/${id}`, { method: 'DELETE' }),
   paperFileUrl: (id: string) => `${BASE}/papers/${id}/file`,
   getOutline: (id: string) =>
     request<{ items: { level: number; title: string; page: number }[] }>(`/papers/${id}/outline`),

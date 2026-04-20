@@ -33,6 +33,7 @@ def _to_read(paper) -> PaperRead:
         total_pages=paper.total_pages,
         file_size=paper.file_size,
         tags=tags,
+        folder_id=getattr(paper, "folder_id", None),
         created_at=paper.created_at,
     )
 
@@ -75,9 +76,12 @@ def list_papers(
     offset: int = Query(0, ge=0),
     q: str | None = Query(None),
     tag: str | None = Query(None),
+    folder_id: str | None = Query(None, description="Filter by folder; special value 'unfiled' = papers with no folder"),
     session: Session = Depends(get_session),
 ):
-    items, total = PaperRepo(session).list(limit=limit, offset=offset, q=q, tag=tag)
+    unfiled = folder_id == "unfiled"
+    fid = None if unfiled else folder_id
+    items, total = PaperRepo(session).list(limit=limit, offset=offset, q=q, tag=tag, folder_id=fid, unfiled=unfiled)
     return PaperList(items=[_to_read(p) for p in items], total=total)
 
 
@@ -92,6 +96,15 @@ def update_paper(paper_id: str, body: PaperUpdate, session: Session = Depends(ge
     if not repo.by_id(paper_id):
         raise PaperNotFound(detail={"paper_id": paper_id})
     patch = body.model_dump(exclude_unset=True)
+    # Validate folder_id refers to an existing folder (None = move to unfiled, allowed)
+    if "folder_id" in patch and patch["folder_id"] is not None:
+        from repositories.folder_repo import FolderRepo
+        if not FolderRepo(session).by_id(patch["folder_id"]):
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=400,
+                detail={"error": {"code": "FOLDER_NOT_FOUND", "message": "folder_id does not exist"}},
+            )
     updated = repo.update(paper_id, patch)
     return _to_read(updated)
 

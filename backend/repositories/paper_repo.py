@@ -39,7 +39,15 @@ class PaperRepo:
         self.s.commit()
         return True
 
-    def list(self, limit: int = 50, offset: int = 0, q: str | None = None, tag: str | None = None) -> tuple[list[Paper], int]:
+    def list(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        q: str | None = None,
+        tag: str | None = None,
+        folder_id: str | None = None,
+        unfiled: bool = False,
+    ) -> tuple[list[Paper], int]:
         from sqlalchemy import func
         count_stmt = select(func.count()).select_from(Paper)
         if q:
@@ -47,6 +55,10 @@ class PaperRepo:
         if tag:
             # JSON array contains the tag string
             count_stmt = count_stmt.where(Paper.tags.like(f'%"{tag}"%'))
+        if unfiled:
+            count_stmt = count_stmt.where(Paper.folder_id.is_(None))
+        elif folder_id:
+            count_stmt = count_stmt.where(Paper.folder_id == folder_id)
         total = self.s.exec(count_stmt).one()
 
         stmt = select(Paper).order_by(Paper.created_at.desc())
@@ -54,6 +66,10 @@ class PaperRepo:
             stmt = stmt.where(Paper.title.ilike(f"%{q}%"))
         if tag:
             stmt = stmt.where(Paper.tags.like(f'%"{tag}"%'))
+        if unfiled:
+            stmt = stmt.where(Paper.folder_id.is_(None))
+        elif folder_id:
+            stmt = stmt.where(Paper.folder_id == folder_id)
         items = self.s.exec(stmt.limit(limit).offset(offset)).all()
         return list(items), int(total)
 
@@ -63,13 +79,24 @@ class PaperRepo:
             return None
         if "tags" in patch and isinstance(patch["tags"], list):
             patch["tags"] = json.dumps(patch["tags"], ensure_ascii=False)
+        # For folder_id we WANT to allow explicit None (= "move to unfiled").
+        # Caller passes {"folder_id": None} deliberately; we distinguish from
+        # "caller didn't mention folder_id" by only putting present keys in patch.
         for k, v in patch.items():
-            if v is not None:
+            if k == "folder_id":
+                setattr(p, k, v)
+            elif v is not None:
                 setattr(p, k, v)
         self.s.add(p)
         self.s.commit()
         self.s.refresh(p)
         return p
+
+    def counts_by_folder(self) -> dict[str | None, int]:
+        """Return {folder_id: count}. None key means unfiled."""
+        from sqlalchemy import func
+        stmt = select(Paper.folder_id, func.count()).group_by(Paper.folder_id)
+        return {fid: int(n) for fid, n in self.s.exec(stmt).all()}
 
     def all_tags(self) -> list[str]:
         """Return sorted unique tag list across all papers."""

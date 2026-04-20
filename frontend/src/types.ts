@@ -23,6 +23,16 @@ export interface Paper {
   total_pages: number;
   file_size?: number | null;
   tags: string[];
+  folder_id?: string | null;
+  created_at: string;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  color?: string | null;
+  sort_order: number;
+  paper_count: number;
   created_at: string;
 }
 

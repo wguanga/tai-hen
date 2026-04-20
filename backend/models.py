@@ -24,6 +24,16 @@ class Paper(SQLModel, table=True):
     file_size: Optional[int] = None
     file_hash: Optional[str] = Field(default=None, index=True)
     tags: str = "[]"  # JSON array of strings
+    folder_id: Optional[str] = Field(default=None, foreign_key="folders.id", index=True)
+    created_at: str = Field(default_factory=utcnow)
+
+
+class Folder(SQLModel, table=True):
+    __tablename__ = "folders"
+    id: str = Field(default_factory=new_id, primary_key=True)
+    name: str
+    color: Optional[str] = None  # hex string like "#f59e0b" or null for default
+    sort_order: int = 0          # ascending; ties broken by created_at
     created_at: str = Field(default_factory=utcnow)
 
 

@@ -137,4 +137,26 @@ describe('app-store reducer', () => {
     act(() => get().dispatch({ type: 'SET_ACTIVE_HIGHLIGHT', highlight }));
     expect(get().state.activeHighlight).toEqual(highlight);
   });
+
+  it('REMOVE_FOLDER orphans in-memory papers (sets folder_id → null)', () => {
+    const get = setup();
+    const folder = { id: 'f1', name: 'tmp', color: null, sort_order: 0, paper_count: 1, created_at: '2026-01-01T00:00:00.000Z' };
+    const filedPaper = { ...paper, folder_id: 'f1' };
+    act(() => get().dispatch({ type: 'SET_FOLDERS', folders: [folder] }));
+    act(() => get().dispatch({ type: 'ADD_PAPER', paper: filedPaper }));
+    act(() => get().dispatch({ type: 'REMOVE_FOLDER', id: 'f1' }));
+    expect(get().state.folders).toEqual([]);
+    // paper kept, but folder_id nulled
+    const p = get().state.papers.find((x) => x.id === 'p1')!;
+    expect(p.folder_id).toBeNull();
+  });
+
+  it('UPDATE_FOLDER replaces by id', () => {
+    const get = setup();
+    const f0 = { id: 'f1', name: 'old', color: null, sort_order: 0, paper_count: 0, created_at: '2026-01-01T00:00:00.000Z' };
+    const f1 = { ...f0, name: 'new' };
+    act(() => get().dispatch({ type: 'SET_FOLDERS', folders: [f0] }));
+    act(() => get().dispatch({ type: 'UPDATE_FOLDER', folder: f1 }));
+    expect(get().state.folders[0].name).toBe('new');
+  });
 });

@@ -1,9 +1,10 @@
 import { createContext, useContext, useMemo, useReducer } from 'react';
 import type { ReactNode } from 'react';
-import type { ChatMessage, Highlight, HighlightColor, Note, Paper } from '../types';
+import type { ChatMessage, Folder, Highlight, HighlightColor, Note, Paper } from '../types';
 
 export interface AppState {
   papers: Paper[];
+  folders: Folder[];
   currentPaper: Paper | null;
   highlights: Highlight[];
   notes: Note[];
@@ -19,6 +20,7 @@ export interface AppState {
 
 const initialState: AppState = {
   papers: [],
+  folders: [],
   currentPaper: null,
   highlights: [],
   notes: [],
@@ -37,6 +39,10 @@ export type Action =
   | { type: 'OPEN_PAPER'; paper: Paper; highlights: Highlight[]; notes: Note[] }
   | { type: 'SET_REFERENCES'; references: { index: number; text: string }[] }
   | { type: 'CLOSE_PAPER' }
+  | { type: 'SET_FOLDERS'; folders: Folder[] }
+  | { type: 'ADD_FOLDER'; folder: Folder }
+  | { type: 'UPDATE_FOLDER'; folder: Folder }
+  | { type: 'REMOVE_FOLDER'; id: string }
   | { type: 'ADD_HIGHLIGHT'; highlight: Highlight }
   | { type: 'UPDATE_HIGHLIGHT'; id: string; patch: Partial<Highlight> }
   | { type: 'REMOVE_HIGHLIGHT'; id: string }
@@ -78,6 +84,22 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, references: action.references };
     case 'CLOSE_PAPER':
       return { ...state, currentPaper: null, highlights: [], notes: [], references: [], messages: [], streamBuffer: '' };
+    case 'SET_FOLDERS':
+      return { ...state, folders: action.folders };
+    case 'ADD_FOLDER':
+      return { ...state, folders: [...state.folders.filter((f) => f.id !== action.folder.id), action.folder] };
+    case 'UPDATE_FOLDER':
+      return {
+        ...state,
+        folders: state.folders.map((f) => (f.id === action.folder.id ? action.folder : f)),
+      };
+    case 'REMOVE_FOLDER':
+      return {
+        ...state,
+        folders: state.folders.filter((f) => f.id !== action.id),
+        // Orphan any papers in-memory that were in this folder
+        papers: state.papers.map((p) => (p.folder_id === action.id ? { ...p, folder_id: null } : p)),
+      };
     case 'ADD_HIGHLIGHT':
       return { ...state, highlights: [...state.highlights, action.highlight] };
     case 'UPDATE_HIGHLIGHT':
