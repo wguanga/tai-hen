@@ -68,7 +68,7 @@ function Layout() {
   const audioTourPaperId = _appState.currentPaper?.id;
   // Publish level to window so PdfReader's creature scrollbar can pick it up
   useEffect(() => {
-    (window as any).__mosslingLevel = appStats.level;
+    (window as any).__taitaiLevel = appStats.level;
   }, [appStats.level]);
 
   // NL command bus: cmd palette dispatches events → we route to the right action
@@ -187,7 +187,7 @@ function Layout() {
           config={config}
           prefs={prefs}
           onOpenMilestones={() => setMilestonesOpen(true)}
-          mosslingLevel={appStats.level}
+          taitaiLevel={appStats.level}
           onOpenAudioTour={() => setAudioTourOpen(true)}
           hasCurrentPaper={!!audioTourPaperId}
           onOpenAIPrefs={() => setAiPrefsOpen(true)}

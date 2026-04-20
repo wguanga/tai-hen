@@ -1,6 +1,6 @@
 # API Reference — 完整接口规范
 
-> 本文是**权威 API 参考**。CLAUDE.md 只列概要，以本文为准。Base URL: `http://127.0.0.1:8000`
+> 本文是**权威 API 参考**。Base URL: `http://127.0.0.1:8000`
 
 ---
 

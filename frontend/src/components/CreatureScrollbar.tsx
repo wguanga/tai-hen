@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import { Mossling, type MosslingEmotion, type Accessory } from './Mossling';
+import { Taitai, type TaitaiEmotion, type Accessory } from './Taitai';
 import { heatColorForSeconds } from '../hooks/useReadingHeatmap';
 
 interface Tick {
@@ -12,12 +12,12 @@ interface Props {
   scrollRef: RefObject<HTMLElement | null>;
   ticks?: Tick[];
   /** External-driven emotion; takes priority over internal scroll-based state. */
-  overrideEmotion?: MosslingEmotion | null;
+  overrideEmotion?: TaitaiEmotion | null;
   /** Paper-topic-derived wearable accessory */
   accessory?: Accessory;
   /** Current reading streak (days) — shows flame on creature when ≥ 2 */
   streak?: number;
-  /** Mossling evolution tier (1-15+) */
+  /** Taitai evolution tier (1-15+) */
   level?: number;
   /** Reading heatmap: page → seconds spent. Rendered as colored bands on rail. */
   heatmap?: Record<number, number>;
@@ -146,7 +146,7 @@ export function CreatureScrollbar({ scrollRef, ticks, overrideEmotion, accessory
         style={{ top: `${pct * 100}%` }}
         onPointerDown={startDrag}
       >
-        <Mossling emotion={effectiveEmotion} accessory={accessory} streak={streak} level={level} keyId="sb" />
+        <Taitai emotion={effectiveEmotion} accessory={accessory} streak={streak} level={level} keyId="sb" />
         {effectiveEmotion === 'dragging' && dragPage ? (
           <div className="creature-tip creature-tip--drag">
             <div className="creature-tip-page">p.{dragPage}</div>
@@ -167,8 +167,8 @@ export function CreatureScrollbar({ scrollRef, ticks, overrideEmotion, accessory
 
 function effectiveFor(
   state: CreatureState,
-  override: MosslingEmotion | null | undefined,
-): MosslingEmotion {
+  override: TaitaiEmotion | null | undefined,
+): TaitaiEmotion {
   // Drag and run are always driven by scroll interaction (highest priority)
   if (state === 'dragging') return 'dragging';
   if (state === 'running') return 'running';
@@ -176,13 +176,13 @@ function effectiveFor(
   return override ?? 'idle';
 }
 
-function motionClass(e: MosslingEmotion): string {
+function motionClass(e: TaitaiEmotion): string {
   if (e === 'dragging') return 'dragging';
   if (e === 'running') return 'running';
   return 'idle';
 }
 
-function tipFor(e: MosslingEmotion): string {
+function tipFor(e: TaitaiEmotion): string {
   switch (e) {
     case 'sleepy':   return '苔苔打盹中…摇我一下';
     case 'clapping': return '好棒！苔苔给你鼓掌 👏';

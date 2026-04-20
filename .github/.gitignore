@@ -1,0 +1,10 @@
+# .github — only track workflow definitions and issue/PR templates.
+*
+
+!.gitignore
+!workflows/
+!workflows/*.yml
+!workflows/*.yaml
+!ISSUE_TEMPLATE/
+!ISSUE_TEMPLATE/*.md
+!PULL_REQUEST_TEMPLATE.md

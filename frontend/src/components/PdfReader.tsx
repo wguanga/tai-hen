@@ -88,9 +88,9 @@ export function PdfReader() {
   const [celebrating, setCelebrating] = useState(false);
   const celebratedRef = useRef<string | null>(null);
   // Creature emotion overlay (priorities are handled in effectiveFor)
-  const [creatureMood, setCreatureMood] = useState<import('./Mossling').MosslingEmotion | null>(null);
+  const [creatureMood, setCreatureMood] = useState<import('./Taitai').TaitaiEmotion | null>(null);
   const moodTimer = useRef<number | null>(null);
-  const flashMood = useCallback((m: import('./Mossling').MosslingEmotion, ms: number) => {
+  const flashMood = useCallback((m: import('./Taitai').TaitaiEmotion, ms: number) => {
     if (moodTimer.current) window.clearTimeout(moodTimer.current);
     setCreatureMood(m);
     moodTimer.current = window.setTimeout(() => setCreatureMood(null), ms);
@@ -116,9 +116,9 @@ export function PdfReader() {
   const heatmap = useReadingHeatmap(paper?.id, currentPage);
   const { streak, markReadToday } = useReadingStreak();
   useEffect(() => { if (paper) markReadToday(); }, [paper?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Level is surfaced via window.__mosslingLevel by App so we don't have to
+  // Level is surfaced via window.__taitaiLevel by App so we don't have to
   // drill the app-stats hook through props here
-  const mosslingLevel = typeof window !== 'undefined' ? (window as any).__mosslingLevel || 1 : 1;
+  const taitaiLevel = typeof window !== 'undefined' ? (window as any).__taitaiLevel || 1 : 1;
   const [openingRing, setOpeningRing] = useState(0); // incrementing key triggers animation re-mount
   // In two-page mode shrink individual page width so a pair fits comfortably
   const pageWidth = Math.round((prefs.twoPage ? 560 : 780) * zoom);
@@ -742,7 +742,7 @@ export function PdfReader() {
       });
       dispatch({ type: 'ADD_HIGHLIGHT', highlight: hl });
       clearSelection();
-      // 👏 Mossling claps briefly for the user
+      // 👏 Taitai claps briefly for the user
       flashMood('clapping', 1400);
       // ✨ Fire-and-forget AI tagging for this new highlight (gated by prefs)
       if (aiPrefs.isEnabled('tag_highlight')) (async () => {
@@ -1232,7 +1232,7 @@ export function PdfReader() {
         overrideEmotion={creatureMood}
         accessory={accessory}
         streak={streak}
-        level={mosslingLevel}
+        level={taitaiLevel}
         heatmap={heatmap}
         totalPages={pageCount}
       />
@@ -1351,7 +1351,7 @@ export function PdfReader() {
       {/* #15 Completion celebration */}
       {celebrating && <CompletionCelebration onDone={() => setCelebrating(false)} />}
 
-      {/* 🧠 Mossling-side gentle offer after 90s on the same page */}
+      {/* 🧠 Taitai-side gentle offer after 90s on the same page */}
       {confusionOffer && (
         <div className="confusion-offer" role="alert">
           <div className="confusion-offer-content">

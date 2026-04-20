@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../api';
-import { Mossling } from './Mossling';
+import { Taitai } from './Taitai';
 
 type Mode = 'preread' | 'comprehension';
 
@@ -103,7 +103,7 @@ export function ReadingCompanion({ paperId, onClose }: Props) {
           {loading && (
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
               <div style={{ animation: 'creatureWiggle 2.5s ease-in-out infinite' }}>
-                <Mossling emotion="thinking" size={36} keyId="rc" />
+                <Taitai emotion="thinking" size={36} keyId="rc" />
               </div>
               <span>苔苔正在准备问题…</span>
             </div>

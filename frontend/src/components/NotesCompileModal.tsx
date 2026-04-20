@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../api';
 import { Markdown } from './Markdown';
-import { Mossling } from './Mossling';
+import { Taitai } from './Taitai';
 
 interface Props {
   paperId: string;
@@ -97,7 +97,7 @@ export function NotesCompileModal({ paperId, paperTitle, onClose }: Props) {
           {loading && (
             <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400 py-8">
               <div style={{ animation: 'creatureWiggle 2.5s ease-in-out infinite' }}>
-                <Mossling emotion="thinking" size={48} keyId="nc" />
+                <Taitai emotion="thinking" size={48} keyId="nc" />
               </div>
               <div>
                 <div className="font-medium">苔苔正在整理你的高亮和笔记…</div>

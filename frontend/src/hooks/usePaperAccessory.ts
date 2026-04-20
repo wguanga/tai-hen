@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { Paper } from '../types';
 
-export type MosslingAccessory =
+export type TaitaiAccessory =
   | 'none'
   | 'glasses'     // CS / ML / AI papers
   | 'beaker'      // chemistry / materials
@@ -13,7 +13,7 @@ export type MosslingAccessory =
   | 'crown';      // well-cited or classical
 
 /** Keyword → accessory mapping. Order matters: earlier wins. */
-const RULES: { accessory: MosslingAccessory; keywords: RegExp }[] = [
+const RULES: { accessory: TaitaiAccessory; keywords: RegExp }[] = [
   { accessory: 'glasses',     keywords: /\b(neural|transformer|attention|gpt|llm|machine learning|deep learning|cnn|rnn|ai|artificial intelligence|reinforcement|embedding|tokeniz|prompt|nlp|computer vision|distill)\b|神经|机器学习|深度学习|注意力|大模型|嵌入|提示词|自然语言/i },
   { accessory: 'chip',        keywords: /\b(gpu|tpu|cuda|compiler|operating system|distributed|parallel|concurrent|consensus|raft|paxos|kernel|architecture|computer system|database|storage)\b|分布式|操作系统|并发|数据库|编译器|内核|架构/i },
   { accessory: 'atom',        keywords: /\b(physics|quantum|particle|cosmolog|relativ|thermodynamic|entropy|photon|electron|neutron)\b|物理|量子|粒子|宇宙|相对论|热力学/i },
@@ -26,7 +26,7 @@ const RULES: { accessory: MosslingAccessory; keywords: RegExp }[] = [
 /** Crown for papers that look "classic" (cited thousands of times, foundational). */
 const CROWN_KEYWORDS = /\b(seminal|landmark|classic|foundational|review|survey)\b|综述|回顾|奠基/i;
 
-export function usePaperAccessory(paper: Paper | null | undefined): MosslingAccessory {
+export function usePaperAccessory(paper: Paper | null | undefined): TaitaiAccessory {
   return useMemo(() => {
     if (!paper) return 'none';
     const hay = `${paper.title} ${paper.authors?.join(' ') ?? ''} ${(paper.tags || []).join(' ')}`;
@@ -38,7 +38,7 @@ export function usePaperAccessory(paper: Paper | null | undefined): MosslingAcce
   }, [paper?.id, paper?.title, paper?.authors, paper?.tags]);
 }
 
-export const ACCESSORY_NAMES: Record<MosslingAccessory, string> = {
+export const ACCESSORY_NAMES: Record<TaitaiAccessory, string> = {
   none: '',
   glasses: '🤓 小眼镜',
   beaker: '🧪 小烧瓶',

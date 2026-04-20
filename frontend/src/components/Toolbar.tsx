@@ -31,7 +31,7 @@ interface ToolbarProps {
   config: AppConfig | null;
   prefs: PrefsLike;
   onOpenMilestones: () => void;
-  mosslingLevel: number;
+  taitaiLevel: number;
   onOpenAudioTour: () => void;
   hasCurrentPaper: boolean;
   onOpenAIPrefs: () => void;
@@ -60,7 +60,7 @@ export function Toolbar({
   config,
   prefs,
   onOpenMilestones,
-  mosslingLevel,
+  taitaiLevel,
   onOpenAudioTour,
   hasCurrentPaper,
   onOpenAIPrefs,
@@ -226,7 +226,7 @@ export function Toolbar({
         focusMode={focusMode}
         hasCurrentPaper={hasCurrentPaper}
         companionEnabled={companionEnabled}
-        mosslingLevel={mosslingLevel}
+        taitaiLevel={taitaiLevel}
         onToggleFocus={onToggleFocus}
         onToggleDark={onToggleDark}
         onOpenGlobalSearch={onOpenGlobalSearch}
@@ -341,7 +341,7 @@ interface MoreMenuProps {
   focusMode: boolean;
   hasCurrentPaper: boolean;
   companionEnabled: boolean;
-  mosslingLevel: number;
+  taitaiLevel: number;
   onToggleFocus: () => void;
   onToggleDark: () => void;
   onOpenGlobalSearch: () => void;
@@ -396,7 +396,7 @@ function ToolbarMoreMenu(props: MoreMenuProps) {
               <MenuItem
                 icon="🏆"
                 label={`成就 & 苔苔`}
-                hint={`Lv${props.mosslingLevel}`}
+                hint={`Lv${props.taitaiLevel}`}
                 onClick={wrap(props.onOpenMilestones)}
                 highlight
               />

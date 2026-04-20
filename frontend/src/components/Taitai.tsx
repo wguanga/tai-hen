@@ -1,10 +1,10 @@
 /**
- * Reusable Mossling SVG with emotion variants.
+ * Reusable Taitai SVG with emotion variants.
  * Used by: CreatureScrollbar (primary), AiPanel (thinking indicator),
  * empty states (sleepy), and completion feedback (proud).
  */
 
-export type MosslingEmotion =
+export type TaitaiEmotion =
   | 'idle'        // gentle wiggle (default)
   | 'running'     // scroll active — body bounces
   | 'dragging'    // user is dragging the creature
@@ -19,18 +19,18 @@ export type Accessory =
   | 'quill' | 'equation' | 'atom' | 'chip' | 'crown';
 
 interface Props {
-  emotion?: MosslingEmotion;
+  emotion?: TaitaiEmotion;
   accessory?: Accessory;
   /** Reading streak count — shows a flame badge when ≥ 2 */
   streak?: number;
-  /** Mossling evolution tier (1-15+). Unlocks extra leaves / flowers / glow. */
+  /** Taitai evolution tier (1-15+). Unlocks extra leaves / flowers / glow. */
   level?: number;
   size?: number;
   /** Unique id suffix when rendering multiple on the same page (avoids defs collision) */
   keyId?: string;
 }
 
-export function Mossling({ emotion = 'idle', accessory = 'none', streak = 0, level = 1, size = 54, keyId = 'm' }: Props) {
+export function Taitai({ emotion = 'idle', accessory = 'none', streak = 0, level = 1, size = 54, keyId = 'm' }: Props) {
   const bodyGrad = `moss-body-${keyId}`;
   const aura = `moss-aura-${keyId}`;
 
@@ -39,7 +39,7 @@ export function Mossling({ emotion = 'idle', accessory = 'none', streak = 0, lev
   const emotionAcc = renderAccessory(emotion);
 
   return (
-    <svg viewBox="-30 -30 60 60" width={size} height={size} className="mossling-svg">
+    <svg viewBox="-30 -30 60 60" width={size} height={size} className="taitai-svg">
       <defs>
         <radialGradient id={bodyGrad} cx="50%" cy="40%" r="60%">
           <stop offset="0%" stopColor="#d4f8b8" />
@@ -228,7 +228,7 @@ function renderAccessory2(a: Accessory) {
   }
 }
 
-function renderEyes(emotion: MosslingEmotion) {
+function renderEyes(emotion: TaitaiEmotion) {
   switch (emotion) {
     case 'sleepy':
       return (
@@ -276,7 +276,7 @@ function renderEyes(emotion: MosslingEmotion) {
   }
 }
 
-function renderMouth(emotion: MosslingEmotion) {
+function renderMouth(emotion: TaitaiEmotion) {
   if (emotion === 'clapping' || emotion === 'proud') {
     return <path d="M -4 5 Q 0 9 4 5" stroke="#1b2a1a" strokeWidth="1.5" fill="none" strokeLinecap="round" />;
   }
@@ -289,7 +289,7 @@ function renderMouth(emotion: MosslingEmotion) {
   return <path d="M -2 5 Q 0 6.2 2 5" stroke="#1b2a1a" strokeWidth="1.3" fill="none" strokeLinecap="round" />;
 }
 
-function renderAccessory(emotion: MosslingEmotion) {
+function renderAccessory(emotion: TaitaiEmotion) {
   if (emotion === 'sleepy') {
     return (
       <g className="creature-zz">

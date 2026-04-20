@@ -17,9 +17,11 @@
 
 # Essential root files
 !.gitignore
+!LICENSE
 !README.md
-!CLAUDE.md
 !package.json
+# CLAUDE.md intentionally NOT whitelisted — it contains agent-workspace
+# instructions that shouldn't ship to the public repo.
 # package-lock.json is intentionally NOT whitelisted.
 # Rationale: this project is developed across Windows + Linux and platform-specific
 # optional deps (@rollup/rollup-*-*, fsevents, etc.) rewrite the lockfile on every
@@ -33,3 +35,4 @@
 !frontend/
 !electron/
 !docs/
+!.github/

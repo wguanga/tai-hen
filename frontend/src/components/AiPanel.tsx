@@ -3,7 +3,7 @@ import { Markdown } from './Markdown';
 import { api } from '../api';
 import { streamSSE } from '../hooks/useStream';
 import { useAppStore } from '../store/app-store';
-import { Mossling } from './Mossling';
+import { Taitai } from './Taitai';
 import { useAIPrefs } from '../hooks/useAIPrefs';
 
 export function AiPanel() {
@@ -176,7 +176,7 @@ export function AiPanel() {
         {state.streaming && !state.streamBuffer && (
           <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 italic">
             <div style={{ animation: 'creatureWiggle 2.5s ease-in-out infinite' }}>
-              <Mossling emotion="thinking" size={40} keyId="ai" />
+              <Taitai emotion="thinking" size={40} keyId="ai" />
             </div>
             <span className="ai-thinking-dots">苔苔翻阅中<span className="inline-block w-6 text-left">
               <span className="dots-pulse" />
@@ -236,7 +236,7 @@ function StarterQuestions({
     return (
       <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
         <div style={{ animation: 'creatureWiggle 2.5s ease-in-out infinite' }}>
-          <Mossling emotion="thinking" size={32} keyId="sq" />
+          <Taitai emotion="thinking" size={32} keyId="sq" />
         </div>
         <span>苔苔在想你可能关心什么…</span>
       </div>
