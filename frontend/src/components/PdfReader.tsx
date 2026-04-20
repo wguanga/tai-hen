@@ -34,8 +34,20 @@ import { useReadingStreak } from '../hooks/useReadingStreak';
 import { Constellations } from './Constellations';
 import { HoverTranslate } from './HoverTranslate';
 import { useAIPrefs } from '../hooks/useAIPrefs';
+import { useResumeReminder } from '../hooks/useResumeReminder';
+import { useGlossaryHighlight } from '../hooks/useGlossaryHighlight';
+import { GlossaryHover } from './GlossaryHover';
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+function friendlyAgo(ts: number): string {
+  const s = (Date.now() - ts) / 1000;
+  if (s < 60) return '刚刚';
+  if (s < 3600) return `${Math.floor(s / 60)} 分钟前`;
+  if (s < 86400) return `${Math.floor(s / 3600)} 小时前`;
+  const d = Math.floor(s / 86400);
+  return d === 1 ? '昨天' : d < 7 ? `${d} 天前` : new Date(ts).toLocaleDateString('zh-CN');
+}
 
 // CJK + non-embedded font support. These dirs are copied to public/ by
 // frontend/scripts/copy-pdfjs-assets.mjs (postinstall). Without cMapUrl,
@@ -92,6 +104,14 @@ export function PdfReader() {
   const bookmarks = useBookmarks(paper?.id);
   const accessory = usePaperAccessory(paper);
   const aiPrefs = useAIPrefs();
+  const resume = useResumeReminder({
+    currentPaperId: paper?.id,
+    paperTitle: paper?.title,
+    currentPage,
+    totalPages: pageCount,
+    hasPaperOpen: !!paper,
+  });
+  const glossary = useGlossaryHighlight(scrollRef, !!paper);
   const heatmap = useReadingHeatmap(paper?.id, currentPage);
   const { streak, markReadToday } = useReadingStreak();
   useEffect(() => { if (paper) markReadToday(); }, [paper?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -461,6 +481,50 @@ export function PdfReader() {
     return () => el.removeEventListener('scroll', onScroll);
   }, [pageCount, getPageElement, paper?.id, toast]);
 
+  // ⌨️ Space / Shift+Space → scroll a viewport; PageDown/PageUp → same.
+  //    Don't intercept when typing in inputs.
+  useEffect(() => {
+    if (!paper) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.matches?.('input, textarea, [contenteditable="true"]')) return;
+      const el = scrollRef.current;
+      if (!el) return;
+      const step = el.clientHeight * 0.85;
+      if (e.key === ' ' || e.key === 'PageDown') {
+        e.preventDefault();
+        const dir = e.shiftKey && e.key === ' ' ? -1 : 1;
+        el.scrollBy({ top: dir * step, behavior: 'smooth' });
+      } else if (e.key === 'PageUp') {
+        e.preventDefault();
+        el.scrollBy({ top: -step, behavior: 'smooth' });
+      } else if (e.key === 'Home' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        el.scrollTo({ top: 0, behavior: 'smooth' });
+      } else if (e.key === 'End' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [paper?.id]);
+
+  // 🔍 Ctrl/⌘ + scroll wheel → zoom (Figma / Google Docs convention)
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !paper) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.1 : -0.1;
+      setZoom((z) => Math.max(0.5, Math.min(3, +(z + delta).toFixed(2))));
+    };
+    // passive:false so preventDefault works
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [paper?.id]);
+
   // #7 Drag-to-scroll — grab empty page area (between lines / margins) and drag
   //    vertically. Text selection on spans still works; interactive elements
   //    (highlights, citations, buttons) are exempted.
@@ -608,8 +672,8 @@ export function PdfReader() {
 
   if (!paper) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center px-6">
+      <div className="flex items-center justify-center h-full p-6">
+        <div className="text-center max-w-md w-full">
           <div className="text-6xl mb-4 select-none" style={{ animation: 'unicornRun 1.4s ease-in-out infinite alternate' }}>
             🦄
           </div>
@@ -620,6 +684,44 @@ export function PdfReader() {
             从左侧论文库挑一篇翻阅，或把 PDF 拖进这个窗口<br />
             ✨ 划线 · 💬 AI 解释 · 📜 自动摘要
           </div>
+          {resume.banner && (
+            <div className="mt-8 p-4 rounded-2xl border border-fuchsia-200 dark:border-fuchsia-800/60 bg-gradient-to-br from-indigo-50 via-fuchsia-50 to-rose-50 dark:from-indigo-900/30 dark:via-fuchsia-900/30 dark:to-rose-900/20 shadow-[0_8px_24px_rgba(168,85,247,.15)] text-left">
+              <div className="text-[10px] uppercase tracking-wider text-fuchsia-500 mb-1">↩ 上次读到这里</div>
+              <div className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate" title={resume.banner.title}>
+                《{resume.banner.title}》
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-mono tabular-nums">
+                p.{resume.banner.page} / {resume.banner.totalPages} · {friendlyAgo(resume.banner.ts)}
+              </div>
+              <div className="flex items-center justify-end gap-2 mt-3">
+                <button
+                  onClick={resume.dismiss}
+                  className="text-xs px-3 py-1 rounded-full border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  稍后
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const p = await api.getPaper(resume.banner!.id);
+                      const [hl, notes] = await Promise.all([
+                        api.listHighlights(p.id),
+                        api.listNotes(p.id),
+                      ]);
+                      dispatch({ type: 'OPEN_PAPER', paper: p, highlights: hl.items, notes: notes.items });
+                      api.getReferences(p.id).then((r) => dispatch({ type: 'SET_REFERENCES', references: r.items })).catch(() => {});
+                    } catch {
+                      resume.clearPersisted();
+                      resume.dismiss();
+                    }
+                  }}
+                  className="magic-btn text-xs px-3 py-1 rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 text-white shadow-[0_2px_10px_rgba(168,85,247,.35)] hover:shadow-[0_2px_14px_rgba(168,85,247,.5)]"
+                >
+                  继续阅读 →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1134,6 +1236,9 @@ export function PdfReader() {
       />
       {/* #13 Hover-to-translate words in the PDF text layer */}
       <HoverTranslate scrollRef={scrollRef} enabled={!!paper && aiPrefs.isEnabled('hover_translate')} />
+
+      {/* Cross-paper glossary — hover any known term to see your saved definition */}
+      <GlossaryHover scrollRef={scrollRef} lookup={glossary.lookup} />
 
       {/* #10 Opening ring burst — fires on every paper open */}
       {openingRing > 0 && (
