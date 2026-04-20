@@ -12,7 +12,7 @@
 
 # Root-level config files
 !package.json
-!package-lock.json
+# package-lock.json intentionally not tracked (see root .gitignore for why)
 !tsconfig.json
 !tailwind.config.js
 !postcss.config.js

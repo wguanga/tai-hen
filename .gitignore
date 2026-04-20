@@ -20,7 +20,11 @@
 !README.md
 !CLAUDE.md
 !package.json
-!package-lock.json
+# package-lock.json is intentionally NOT whitelisted.
+# Rationale: this project is developed across Windows + Linux and platform-specific
+# optional deps (@rollup/rollup-*-*, fsevents, etc.) rewrite the lockfile on every
+# cross-OS `npm install`, producing noisy diffs. Collaborators should rely on the
+# semver ranges in package.json; pin a critical dep there if you need hard stability.
 
 # Managed directories — each has its own nested .gitignore.
 # Un-ignoring the directory here lets git descend into it; the per-directory
