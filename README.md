@@ -4,7 +4,7 @@
 >
 > Electron 壳 · Python FastAPI 后端 · React + TypeScript 前端 · SQLite 存储。
 
-[![CI](https://github.com/WaoO/tai-hen/actions/workflows/ci.yml/badge.svg)](https://github.com/WaoO/tai-hen/actions/workflows/ci.yml)
+[![CI](https://github.com/wguanga/tai-hen/actions/workflows/ci.yml/badge.svg)](https://github.com/wguanga/tai-hen/actions/workflows/ci.yml)
 
 ---
 
